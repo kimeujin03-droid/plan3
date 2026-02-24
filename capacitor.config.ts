@@ -4,7 +4,6 @@ const config: CapacitorConfig = {
   appId: 'com.yujin.lifelogplanner',
   appName: 'Digital Life Log Planner',
   webDir: 'dist',
-  bundledWebRuntime: false,
   server: {
     androidScheme: 'https',
   },
