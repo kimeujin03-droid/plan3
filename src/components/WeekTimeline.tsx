@@ -9,8 +9,8 @@ interface WeekTimelineProps {
   onDayClick?: (dateISO: string) => void;
 }
 
-const TIME_LABEL_W = 28;
-const ROW_H = 32;
+const TIME_LABEL_W = 32; // same as DayTimeline for visual consistency
+const ROW_H = 32; // shorter rows than DayTimeline (56px) for 7-day overview density
 
 export function WeekTimeline({
   weekDates,

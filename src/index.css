@@ -54,7 +54,12 @@
   --memo-line: oklch(0.30 0.01 80);
 }
 
-html, body, #root {
+html, body {
+  height: 100%;
+  width: 100%;
+}
+
+#root {
   height: 100%;
   width: 100%;
   overflow: hidden;

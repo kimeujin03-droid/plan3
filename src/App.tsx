@@ -160,6 +160,7 @@ export default function App() {
           <button
             className="px-2 py-1 rounded-md text-xs font-medium active:bg-[color:var(--secondary)]"
             onClick={handleToday}
+            aria-label={`오늘로 이동: ${formatDateKorean(date)}`}
           >
             {formatDateKorean(date)}
           </button>
@@ -275,6 +276,7 @@ export default function App() {
           }}
           onClick={() => setShowBrushPanel(!showBrushPanel)}
           title={currentBrush?.name || '브러시'}
+          aria-label={`브러시 선택: ${currentBrush?.name || '브러시'}`}
         />
 
         {/* Redo */}
