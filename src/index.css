@@ -1,0 +1,154 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Digital Life Log Planner — Color System v1.3.1 (고정 / 변경 금지) */
+:root {
+  /* 기본 UI 컬러 - Light Theme */
+  --bg: oklch(0.98 0 0);
+  --fg: oklch(0.15 0 0);
+  --primary: oklch(0.55 0.20 280);
+  --secondary: oklch(0.95 0 0);
+  --border: oklch(0.90 0 0);
+  --destructive: oklch(0.58 0.25 27);
+  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+
+  /* 활동 카테고리 색상 (고정) */
+  --activity-work: #F2A0B3;
+  --activity-rest: #7FE5A0;
+  --activity-hobby: #7FB5E5;
+  --activity-health: #E5D17F;
+  --activity-move: #B57FE5;
+  --activity-sleep: #4ADE80;
+  --activity-meal: #FBBF24;
+  --activity-custom: #6B7280;
+
+  /* Indicator */
+  --indicator-bg: rgba(245, 158, 11, 0.9);
+
+  /* Memo */
+  --memo-pin-bg: oklch(0.95 0.02 80);
+  --memo-popup-bg: oklch(0.98 0.01 80);
+  --memo-line: oklch(0.85 0.01 80);
+}
+
+.dark {
+  /* 기본 UI 컬러 - Dark Theme */
+  --bg: oklch(0.10 0 0);
+  --fg: oklch(0.95 0 0);
+  --primary: oklch(0.55 0.15 220);
+  --secondary: oklch(0.18 0 0);
+  --border: oklch(0.22 0 0);
+  --destructive: oklch(0.50 0.20 25);
+  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+
+  /* Memo (dark) */
+  --memo-pin-bg: oklch(0.25 0.02 80);
+  --memo-popup-bg: oklch(0.20 0.01 80);
+  --memo-line: oklch(0.30 0.01 80);
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--bg);
+  color: var(--fg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* 타임라인 그리드 */
+.timeline-row {
+  height: 80px;
+}
+
+/* Select 모드 핸들 */
+.resize-handle {
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+/* 정밀 조정 캡슐 */
+.time-capsule {
+  background: var(--primary);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Memo 핀 */
+.memo-pin {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 12px;
+  height: 12px;
+  background: var(--memo-pin-bg);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+
+/* Memo 팝업 (메모지 UI) */
+.memo-popup {
+  background: var(--memo-popup-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  min-width: 200px;
+  max-width: 280px;
+}
+
+.memo-popup-lines {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent,
+    transparent 19px,
+    var(--memo-line) 19px,
+    var(--memo-line) 20px
+  );
+  padding: 8px 12px;
+  min-height: 80px;
+}
+
+/* Extension 구간 스타일 */
+.paint-extension {
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 4px,
+    rgba(0, 0, 0, 0.1) 4px,
+    rgba(0, 0, 0, 0.1) 8px
+  );
+}
+
+/* Resistance 이모지 */
+.resistance-badge {
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* Energy 레벨 */
+.energy-indicator {
+  display: flex;
+  gap: 2px;
+}
+
+.energy-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.energy-dot.active {
+  background: var(--primary);
+}
