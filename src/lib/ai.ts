@@ -57,7 +57,12 @@ export function toCommands(wire: unknown, activities: Activity[], now: number, t
         // 앞날의 일. 날짜는 오늘부터 1년 안, 시각은 있을 때만.
         const text = str(raw.text, 80) || name;
         const dm = typeof raw.date === 'string' ? raw.date.match(/^(\d{4})-(\d{2})-(\d{2})$/) : null;
-        if (!text || !dm) break;
+        if (!text) break;
+        // 날짜를 못 받았으면 버리지 않고 기한 없는 계획으로 남긴다.
+        if (!dm) {
+          out.push({ type: 'todo', text, due: null });
+          break;
+        }
         const due = new Date(Number(dm[1]), Number(dm[2]) - 1, Number(dm[3])).getTime();
         if (!(due >= today && due <= addDays(today, 366))) break;
         const start = clock(raw.start, due);

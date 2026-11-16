@@ -77,7 +77,9 @@ describe('AI가 돌려준 계획', () => {
       { type: 'todo', text: '교수님 면담', due: mon + 8 * DAY, start: mon + 8 * DAY + 15 * HOUR, activityId: null },
     ]);
     expect(toCommands({ commands: [{ type: 'plan', text: '빨래', date: '2026-11-22' }] }, acts, now, mon)).toEqual([{ type: 'todo', text: '빨래', due: mon + 6 * DAY }]);
-    // 지난 날짜, 이상한 날짜는 버린다.
-    expect(toCommands({ commands: [{ type: 'plan', text: 'x', date: '2026-11-10' }, { type: 'plan', text: 'y', date: '내일' }] }, acts, now, mon)).toEqual([]);
+    // 지난 날짜는 버린다.
+    expect(toCommands({ commands: [{ type: 'plan', text: 'x', date: '2026-11-10' }] }, acts, now, mon)).toEqual([]);
+    // 날짜가 빠졌으면 기한 없는 계획으로.
+    expect(toCommands({ commands: [{ type: 'plan', text: 'y', date: '내일' }] }, acts, now, mon)).toEqual([{ type: 'todo', text: 'y', due: null }]);
   });
 });
