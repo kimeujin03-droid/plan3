@@ -2,14 +2,14 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { aiParse, DEFAULT_API } from './lib/ai';
 import { uid } from './lib/id';
-import { activeIntervals, mergeAdd, paintCell } from './lib/intervals';
-import { rescheduleNudge } from './lib/notify';
+import { activeIntervals, mergeAdd, paintCell, subtract } from './lib/intervals';
+import { rescheduleNudge, scheduleTimerAlert } from './lib/notify';
 import { moaStorage } from './lib/storage';
 import { childColor, DEFAULT_ACTIVITIES, EXTRA_COLORS, SLEEP_ID } from './lib/palette';
 import { parse, type Command } from './lib/parser';
 import { recordPlanEdit } from './lib/plans';
 import { CELL, dayStart, fmtDur, fmtHM, fmtMD } from './lib/time';
-import type { Activity, Data, PaintMode } from './lib/types';
+import type { Activity, Data, EraseMode, PaintMode, TimerState, Todo } from './lib/types';
 
 export interface Reply {
   text: string;
@@ -36,7 +36,17 @@ interface Store extends Data {
   dismissReply: () => void;
   /** 방금 무언가를 끝낸 시각. 모아가 잠깐 신나 한다. 저장하지 않는다. */
   cheerAt: number;
-  addTodo: (text: string, due: number | null) => void;
+  addTodo: (text: string, due: number | null, extra?: Pick<Todo, 'type' | 'start' | 'end' | 'minutes' | 'activityId'>) => void;
+  /** 타이머(mode 'timer')나 뽀모도로를 시작한다. 활동도 같이 시작된다. */
+  startTimer: (mode: TimerState['mode'], activityId: string, minutes: number) => void;
+  /** 타이머 표시만 끈다. 돌고 있는 기록은 건드리지 않는다. */
+  stopTimer: () => void;
+  /** 뽀모도로의 다음 집중을 시작한다. */
+  nextPomo: () => void;
+  /** 매초 불린다. 시간이 다 되면 단계를 넘긴다. */
+  tickTimer: (now: number) => void;
+  /** 그 칸들의 메모를 지운다. */
+  eraseNotes: (cellStart: number, cells: number) => void;
   toggleTodo: (id: string) => void;
   removeTodo: (id: string) => void;
   /** 기록 하나를 통째로 지운다. 되돌릴 수 있다. */
@@ -44,7 +54,7 @@ interface Store extends Data {
   /** 칸 메모를 쓰거나(빈 글이면) 지운다. */
   setCellNote: (at: number, text: string) => void;
   /** 이어진 10분 칸 여러 개를 한 번에 칠한다. 주간 보기에서 한 시간씩 칠할 때 쓴다. */
-  paintRange: (cellStart: number, cells: number, mode: PaintMode, activityId: string) => void;
+  paintRange: (cellStart: number, cells: number, mode: PaintMode | EraseMode, activityId: string) => void;
   rateFocus: (value: number) => void;
   addActivity: (name: string, parentId?: string) => void;
   /** 기록에 쓰인 적 없고 하위 활동도 없을 때만 지운다. 지웠으면 true. */
@@ -66,6 +76,7 @@ export const emptyData = (): Data => ({
   planVersions: [],
   todos: [],
   cellNotes: [],
+  timer: null,
   sleeping: false,
   nudge: false,
   ai: false,
@@ -82,6 +93,7 @@ export function pickData(s: Data): Data {
     planVersions: s.planVersions,
     todos: s.todos,
     cellNotes: s.cellNotes,
+    timer: s.timer,
     sleeping: s.sleeping,
     nudge: s.nudge,
     ai: s.ai,
@@ -278,7 +290,10 @@ export const useStore = create<Store>()(
             blocked = true;
             continue;
           }
-          intervals = paintCell(intervals, at, activityId, mode, now);
+          if (mode === 'erasePlan' || mode === 'eraseExec') {
+            const kind = mode === 'erasePlan' ? 'plan' : 'exec';
+            intervals = subtract(intervals, at, at + CELL, (iv) => iv.kind === kind, now);
+          } else intervals = paintCell(intervals, at, activityId, mode, now);
         }
         if (blocked && intervals === s.intervals) {
           const text = '아직 안 온 시간은 계획으로만 칠할 수 있어.';
@@ -287,15 +302,82 @@ export const useStore = create<Store>()(
         }
         if (intervals === s.intervals) return;
         const planVersions =
-          mode === 'exec' ? s.planVersions : recordPlanEdit(s.planVersions, intervals, dayStart(cellStart), now);
+          mode === 'exec' || mode === 'eraseExec' ? s.planVersions : recordPlanEdit(s.planVersions, intervals, dayStart(cellStart), now);
         set({ intervals, planVersions });
       },
 
-      addTodo: (text, due) => {
+      addTodo: (text, due, extra) => {
         const t = text.trim().slice(0, 80);
         if (!t) return;
         const now = Date.now();
-        set({ todos: [...get().todos, { id: uid('todo'), text: t, due, done: false, doneAt: null, createdAt: now }] });
+        const s = get();
+        const todo: Todo = { id: uid('todo'), text: t, due, done: false, doneAt: null, createdAt: now, ...extra };
+        let intervals = s.intervals;
+        // 시간을 정한 계획은 격자에도 계획으로 칠해 둔다.
+        if (todo.type === 'range' && todo.activityId && todo.start !== undefined && todo.end !== undefined && todo.end > todo.start) {
+          intervals = subtract(intervals, todo.start, todo.end, (iv) => iv.kind === 'plan', now);
+          intervals = mergeAdd(intervals, { activityId: todo.activityId, kind: 'plan', start: todo.start, end: todo.end, source: 'paint' });
+        }
+        set({ todos: [...s.todos, todo], intervals });
+      },
+
+      startTimer: (mode, activityId, minutes) => {
+        const now = Date.now();
+        if (!activeIntervals(get().intervals).some((iv) => iv.activityId === activityId)) get().startActivity(activityId);
+        const min = Math.max(1, Math.min(180, Math.round(minutes)));
+        set({ timer: { mode, activityId, minutes: min, breakMinutes: 5, phase: 'focus', phaseStart: now, round: 1 } });
+        void scheduleTimerAlert(now + min * 60_000, mode === 'pomo' ? `${min}분 집중 끝! 5분 쉬자.` : `${min}분 됐어!`);
+      },
+
+      stopTimer: () => {
+        set({ timer: null });
+        void scheduleTimerAlert(null);
+      },
+
+      nextPomo: () => {
+        const t = get().timer;
+        if (!t) return;
+        const now = Date.now();
+        get().startActivity(t.activityId);
+        set({ timer: { ...t, phase: 'focus', phaseStart: now, round: t.round + 1 } });
+        void scheduleTimerAlert(now + t.minutes * 60_000, `${t.minutes}분 집중 끝! 5분 쉬자.`);
+      },
+
+      tickTimer: (now) => {
+        const s = get();
+        const t = s.timer;
+        if (!t) return;
+        const running = activeIntervals(s.intervals).some((iv) => iv.activityId === t.activityId);
+        if (t.phase === 'focus' || t.phase === 'over') {
+          // 직접 끝냈으면 타이머도 같이 끝난다.
+          if (!running) {
+            set({ timer: null });
+            void scheduleTimerAlert(null);
+            return;
+          }
+          if (t.phase === 'over') return;
+          const end = t.phaseStart + t.minutes * 60_000;
+          if (now < end) return;
+          if (t.mode === 'timer') {
+            set({ timer: { ...t, phase: 'over' }, lastReply: { text: `${t.minutes}분 됐어! 계속하면 이어서 적을게.`, at: now }, cheerAt: now });
+            return;
+          }
+          // 뽀모도로: 집중이 끝난 정확한 시각으로 기록을 닫고 쉬는 시간으로 넘어간다.
+          s.endActivityAt(t.activityId, end);
+          set({ timer: { ...t, phase: 'break', phaseStart: end }, lastReply: { text: `뽀모도로 ${t.round}번 끝! ${t.breakMinutes}분 쉬자.`, at: now }, cheerAt: now });
+          void scheduleTimerAlert(end + t.breakMinutes * 60_000, '쉬는 시간 끝. 준비되면 이어서 하자.');
+          return;
+        }
+        if (t.phase === 'break' && now >= t.phaseStart + t.breakMinutes * 60_000) {
+          // 자리를 비웠을 수 있으니 저절로 시작하지 않고 기다린다.
+          set({ timer: { ...t, phase: 'ready' }, lastReply: { text: '쉬는 시간 끝. 준비되면 눌러줘.', at: now } });
+        }
+      },
+
+      eraseNotes: (cellStart, cells) => {
+        const end = cellStart + cells * CELL;
+        const rest = get().cellNotes.filter((n) => n.at < cellStart || n.at >= end);
+        if (rest.length !== get().cellNotes.length) set({ cellNotes: rest });
       },
 
       toggleTodo: (id) => {
@@ -441,6 +523,7 @@ export const useStore = create<Store>()(
             planVersions: arr(p.planVersions).filter((v) => v && Number.isFinite(v.day) && Array.isArray(v.items)),
             todos: arr(p.todos).filter((t) => t && typeof t.id === 'string' && typeof t.text === 'string' && (t.due === null || Number.isFinite(t.due))),
             cellNotes: arr(p.cellNotes).filter((n) => n && Number.isFinite(n.at) && typeof n.text === 'string'),
+            timer: null,
             sleeping: intervals.some((iv) => iv.activityId === SLEEP_ID && iv.end === null),
             nudge: cur.nudge,
             ai: cur.ai,

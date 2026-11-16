@@ -7,7 +7,7 @@ import { activeIntervals } from '../lib/intervals';
 import { SLEEP_ID } from '../lib/palette';
 import { dayStart, fmtDate, fmtDur, fmtHM } from '../lib/time';
 import { useStore } from '../store';
-import { TodoRow } from './Todos';
+import { GoalRow, TodoRow } from './Todos';
 
 interface Props {
   now: number;
@@ -53,13 +53,14 @@ function GapCard({ now }: { now: number }) {
 function TodayTodos({ now, onOpen }: { now: number; onOpen: () => void }) {
   const todos = useStore((s) => s.todos);
   const today = dayStart(now);
-  const due = todos.filter((t) => !t.done && t.due !== null && t.due <= today).sort((a, b) => (a.due ?? 0) - (b.due ?? 0));
-  if (!due.length) return null;
+  const due = todos.filter((t) => !t.done && t.type !== 'hours' && t.due !== null && t.due <= today).sort((a, b) => (a.start ?? a.due ?? 0) - (b.start ?? b.due ?? 0));
+  const goals = todos.filter((t) => t.type === 'hours');
+  if (!due.length && !goals.length) return null;
   return (
     <div className="card" style={{ gap: 2, padding: '12px 8px 8px 16px' }}>
       <div className="row between" style={{ paddingRight: 8 }}>
         <div className="h2" style={{ fontSize: 15 }}>
-          오늘 할 일 · {due.length}개 남음
+          오늘 계획{due.length ? ` · ${due.length}개 남음` : ''}
         </div>
         <button className="pill clear" style={{ minHeight: 32, padding: 0 }} onClick={onOpen}>
           전체 보기
@@ -67,6 +68,9 @@ function TodayTodos({ now, onOpen }: { now: number; onOpen: () => void }) {
       </div>
       {due.slice(0, 3).map((t) => (
         <TodoRow key={t.id} todo={t} now={now} />
+      ))}
+      {goals.slice(0, 2).map((t) => (
+        <GoalRow key={t.id} todo={t} now={now} />
       ))}
     </div>
   );

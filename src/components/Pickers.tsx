@@ -25,10 +25,11 @@ function useGroups() {
  * 한 번 누르면 바로 시작하고, 돌고 있는 걸 누르면 끝나는 스톱워치 버튼 묶음.
  * 하위 활동이 있는 대주제는 이름을 누르면 바로 시작하고, 옆 화살표를 누르면 세부 항목이 열린다.
  */
-export function StartGrid({ now }: { now: number }) {
+export function StartGrid({ now, onStart }: { now: number; onStart?: (activityId: string) => void }) {
   const { tops, childrenOf } = useGroups();
   const intervals = useStore((s) => s.intervals);
-  const start = useStore((s) => s.startActivity);
+  const startNow = useStore((s) => s.startActivity);
+  const start = onStart ?? startNow;
   const end = useStore((s) => s.endActivity);
   const [open, setOpen] = useState<string | null>(null);
   const running = new Map(activeIntervals(intervals).map((iv) => [iv.activityId, iv]));

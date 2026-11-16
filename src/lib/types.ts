@@ -43,6 +43,32 @@ export interface Todo {
   done: boolean;
   doneAt: number | null;
   createdAt: number;
+  /**
+   * 계획의 종류. 없으면 'due'.
+   * due: 마감일까지 / range: 그날 몇 시부터 몇 시까지 / hours: 매일 몇 시간쯤
+   */
+  type?: 'due' | 'range' | 'hours';
+  /** range: 시작·끝 시각(ms) */
+  start?: number;
+  end?: number;
+  /** hours: 하루 목표(분) */
+  minutes?: number;
+  /** range·hours: 어느 활동인지 */
+  activityId?: string;
+}
+
+/** 타이머·뽀모도로 진행 상태. 스톱워치는 이 값 없이 그냥 기록만 돈다. */
+export interface TimerState {
+  mode: 'timer' | 'pomo';
+  activityId: string;
+  /** 집중 한 번의 길이(분) */
+  minutes: number;
+  /** 뽀모도로 쉬는 시간(분) */
+  breakMinutes: number;
+  /** focus: 세는 중 / over: 시간이 다 됐지만 계속하는 중 / break: 쉬는 중 / ready: 다음 집중을 기다리는 중 */
+  phase: 'focus' | 'over' | 'break' | 'ready';
+  phaseStart: number;
+  round: number;
 }
 
 /** 격자 칸에 붙이는 짧은 메모. at은 그 10분 칸의 시작 시각. */
@@ -79,6 +105,7 @@ export interface Data {
   planVersions: PlanVersion[];
   todos: Todo[];
   cellNotes: CellNote[];
+  timer: TimerState | null;
   sleeping: boolean;
   nudge: boolean;
   /** 못 알아들은 말을 AI 서버에 보내도 된다고 사용자가 켠 경우에만 true */
@@ -88,3 +115,5 @@ export interface Data {
 }
 
 export type PaintMode = 'plan' | 'exec' | 'erase';
+/** 종류별 지우개: 계획만, 한 일만 */
+export type EraseMode = 'erasePlan' | 'eraseExec';

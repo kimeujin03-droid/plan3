@@ -1,18 +1,15 @@
 import { useMemo, useRef, type PointerEvent } from 'react';
 import { cellInfo } from '../lib/intervals';
-import { soft } from '../lib/palette';
 import { addDays, CELL, dayStart, HOUR } from '../lib/time';
-import type { PaintMode } from '../lib/types';
 import { useStore } from '../store';
 
 interface Props {
   /** 그 주 월요일 0시 */
   week: number;
-  mode: PaintMode | 'note';
+  erasing: boolean;
   activityId: string;
   now: number;
   onOpenDay: (day: number) => void;
-  onPickCell: (cellStart: number) => void;
 }
 
 const DOW = ['월', '화', '수', '목', '금', '토', '일'];
@@ -27,13 +24,12 @@ function top(values: (string | null)[]): string | null {
 }
 
 /**
- * 한 주를 한 화면에. 가로가 요일, 세로가 시간이고 한 칸이 한 시간이다.
- * 세로로 문지르면 한 시간씩 칠해진다. 화면 스크롤은 왼쪽 시간 줄이나 요일 줄을 잡고 한다.
+ * 한 주의 계획만 한 화면에. 가로가 요일, 세로가 시간이고 한 칸이 한 시간이다.
+ * 문지르면 한 시간씩 계획이 칠해진다. 한 일과 메모는 하루 보기에서 다룬다.
  */
-export function WeekGrid({ week, mode, activityId, now, onOpenDay, onPickCell }: Props) {
+export function WeekGrid({ week, erasing, activityId, now, onOpenDay }: Props) {
   const intervals = useStore((s) => s.intervals);
   const activities = useStore((s) => s.activities);
-  const cellNotes = useStore((s) => s.cellNotes);
   const paintRange = useStore((s) => s.paintRange);
   const beginStroke = useStore((s) => s.beginStroke);
   const drag = useRef({ on: false, last: -1 });
@@ -44,30 +40,22 @@ export function WeekGrid({ week, mode, activityId, now, onOpenDay, onPickCell }:
   const cells = useMemo(() => {
     const byId = new Map(activities.map((a) => [a.id, a]));
     const end = addDays(week, 7);
-    const weekIv = intervals.filter((iv) => iv.start < end && (iv.end === null ? now : iv.end) > week);
-    const notes = new Map<number, string>();
-    for (const n of cellNotes) {
-      if (n.at >= week && n.at < end) {
-        const hour = Math.floor(n.at / HOUR) * HOUR;
-        if (!notes.has(hour)) notes.set(hour, n.text);
-      }
-    }
+    const plans = intervals.filter((iv) => iv.kind === 'plan' && iv.start < end && (iv.end ?? now) > week);
     // 화면은 시간(행) 먼저, 요일(열) 다음 순서로 그린다.
     return Array.from({ length: 24 * 7 }, (_, i) => {
       const hourStart = days[i % 7] + Math.floor(i / 7) * HOUR;
-      const infos = Array.from({ length: 6 }, (_, k) => cellInfo(weekIv, hourStart + k * CELL, now));
-      const plan = top(infos.map((c) => c.plan));
-      const exec = top(infos.map((c) => c.exec[0] ?? null));
+      const infos = Array.from({ length: 6 }, (_, k) => cellInfo(plans, hourStart + k * CELL, now).plan);
+      const plan = top(infos);
+      const above = i >= 7 ? top(Array.from({ length: 6 }, (_, k) => cellInfo(plans, hourStart - HOUR + k * CELL, now).plan)) : null;
       return {
-        planBg: plan ? soft(byId.get(plan)?.color ?? '#cccccc') : undefined,
-        execBg: exec ? byId.get(exec)?.color : undefined,
-        // 그 시간 중 적힌 10분 칸의 비율만큼만 채운다.
-        fill: infos.filter((c) => c.exec.length > 0).length / 6,
-        note: notes.get(hourStart) ?? '',
+        bg: plan ? byId.get(plan)?.color : undefined,
+        // 한 시간 중 계획이 잡힌 만큼만 채운다.
+        fill: infos.filter(Boolean).length / 6,
+        label: plan && plan !== above ? byId.get(plan)?.name ?? '' : '',
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [intervals, activities, cellNotes, week, minute]);
+  }, [intervals, activities, week, minute]);
 
   const at = (e: PointerEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -79,8 +67,7 @@ export function WeekGrid({ week, mode, activityId, now, onOpenDay, onPickCell }:
     const c = at(e);
     if (drag.current.last === c.index) return;
     drag.current.last = c.index;
-    if (mode === 'note') return;
-    paintRange(c.start, 6, mode, activityId);
+    paintRange(c.start, 6, erasing ? 'erasePlan' : 'plan', activityId);
   };
 
   const nowRow = today >= week && today < addDays(week, 7) ? (now - today) / (24 * HOUR) : null;
@@ -105,14 +92,9 @@ export function WeekGrid({ week, mode, activityId, now, onOpenDay, onPickCell }:
         <div
           className="wk-cells"
           role="img"
-          aria-label="한 주 격자. 가로가 요일, 세로가 시간."
+          aria-label="한 주 계획. 가로가 요일, 세로가 시간."
           onPointerDown={(e) => {
             drag.current = { on: true, last: -1 };
-            if (mode === 'note') {
-              onPickCell(at(e).start);
-              drag.current.on = false;
-              return;
-            }
             beginStroke();
             try {
               e.currentTarget.setPointerCapture(e.pointerId);
@@ -132,9 +114,9 @@ export function WeekGrid({ week, mode, activityId, now, onOpenDay, onPickCell }:
           }}
         >
           {cells.map((c, i) => (
-            <div className="wk-cell" key={i} style={{ background: c.planBg }}>
-              {c.execBg && <i style={{ background: c.execBg, width: `${Math.max(34, c.fill * 100)}%` }} />}
-              {c.note && <span>{c.note}</span>}
+            <div className="wk-cell" key={i}>
+              {c.bg && <i style={{ background: c.bg, height: `${Math.max(34, c.fill * 100)}%` }} />}
+              {c.label && <span>{c.label}</span>}
             </div>
           ))}
           {nowRow !== null && <div className="nowline" style={{ top: `${nowRow * 100}%`, left: `${(((today - week) / (24 * HOUR)) / 7) * 100}%`, width: `${100 / 7}%` }} />}

@@ -18,7 +18,7 @@ type Overlay = 'settings' | null;
 const TABS: { id: Tab; name: string }[] = [
   { id: 'home', name: '모아' },
   { id: 'record', name: '기록' },
-  { id: 'todos', name: '할 일' },
+  { id: 'todos', name: '계획' },
   { id: 'clock', name: '시계' },
 ];
 
@@ -62,7 +62,10 @@ function Shell() {
   const [tab, setTab] = useState<Tab>('home');
   const [overlay, setOverlay] = useState<Overlay>(null);
   const running = useStore((s) => activeIntervals(s.intervals).length > 0);
-  const now = useNow(running ? 1000 : 20_000);
+  const hasTimer = useStore((s) => s.timer !== null);
+  const tickTimer = useStore((s) => s.tickTimer);
+  const now = useNow(running || hasTimer ? 1000 : 20_000);
+  useEffect(() => tickTimer(now), [now, tickTimer]);
 
   // 글자를 치는 동안은 하단 탭을 숨겨 입력창이 키보드 바로 위에 오게 한다.
   const [typing, setTyping] = useState(false);
