@@ -1,5 +1,5 @@
 import { matchActivity, type Command } from './parser';
-import { dayStart, HOUR, MIN } from './time';
+import { addDays, dayStart, HOUR, MIN } from './time';
 import type { Activity } from './types';
 
 /** 기본 서버 주소. 빌드할 때 VITE_MOA_API로 바꿀 수 있다. */
@@ -16,6 +16,7 @@ interface WireCommand {
   end?: unknown;
   value?: unknown;
   text?: unknown;
+  date?: unknown;
 }
 
 const str = (v: unknown, max: number): string => (typeof v === 'string' ? v.trim().slice(0, max) : '');
@@ -33,7 +34,7 @@ function clock(v: unknown, base: number): number | null {
  * 서버가 돌려준 명령을 앱이 아는 모양으로만 받아들인다.
  * 모르는 종류, 빠진 값, 이상한 시각은 버린다: 서버나 모델이 무엇을 보내도 기록이 망가지지 않게 하는 마지막 관문.
  */
-export function toCommands(wire: unknown, activities: Activity[], now: number): Command[] {
+export function toCommands(wire: unknown, activities: Activity[], now: number, today: number = dayStart(now)): Command[] {
   const list = (wire as { commands?: unknown })?.commands;
   if (!Array.isArray(list)) return [];
   const out: Command[] = [];
@@ -52,6 +53,24 @@ export function toCommands(wire: unknown, activities: Activity[], now: number): 
       case 'intent':
         if (name) out.push({ type: 'todo', text: name, due: null });
         break;
+      case 'plan': {
+        // 앞날의 일. 날짜는 오늘부터 1년 안, 시각은 있을 때만.
+        const text = str(raw.text, 80) || name;
+        const dm = typeof raw.date === 'string' ? raw.date.match(/^(\d{4})-(\d{2})-(\d{2})$/) : null;
+        if (!text || !dm) break;
+        const due = new Date(Number(dm[1]), Number(dm[2]) - 1, Number(dm[3])).getTime();
+        if (!(due >= today && due <= addDays(today, 366))) break;
+        const start = clock(raw.start, due);
+        let end = clock(raw.end, due);
+        if (start === null) out.push({ type: 'todo', text, due });
+        else if (end === null) out.push({ type: 'todo', text, due, start, activityId: act?.id ?? null });
+        else {
+          if (end <= start) end += 24 * HOUR;
+          if (end - start > 16 * HOUR) break;
+          out.push({ type: 'todo', text, due, start, end, activityId: act?.id ?? null });
+        }
+        break;
+      }
       case 'backfill': {
         const start = clock(raw.start, base);
         let end = clock(raw.end, base);
@@ -103,7 +122,7 @@ const pad = (n: number) => String(n).padStart(2, '0');
 
 /**
  * 규칙으로 못 알아들은 말을 서버(AI)에 물어본다. 실패하거나 느리면 null: 부르는 쪽이 메모로 남긴다.
- * 보내는 것은 그 한 문장, 활동 이름들, 지금 시각뿐이다. 과거 기록은 보내지 않는다.
+ * 보내는 것은 그 한 문장, 활동 이름들, 지금 시각과 오늘 날짜뿐이다. 과거 기록은 보내지 않는다.
  */
 export async function aiParse(
   apiUrl: string,
@@ -111,9 +130,11 @@ export async function aiParse(
   activities: Activity[],
   running: string[],
   now: number,
+  today: number = dayStart(now),
 ): Promise<Command[] | null> {
   if (!apiUrl) return null;
   const d = new Date(now);
+  const t = new Date(today);
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
@@ -125,11 +146,13 @@ export async function aiParse(
         activities: activities.map((a) => a.name).slice(0, 30),
         running,
         now: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+        // 사용자가 느끼는 오늘(자기 전의 새벽은 전날)과 그 요일
+        today: `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())} ${'일월화수목금토'[t.getDay()]}`,
       }),
       signal: ctrl.signal,
     });
     if (!res.ok) return null;
-    const cmds = toCommands(await res.json(), activities, now);
+    const cmds = toCommands(await res.json(), activities, now, today);
     return cmds.length ? cmds : null;
   } catch {
     return null;

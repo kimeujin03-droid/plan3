@@ -45,5 +45,8 @@ jobs:
         URL=https://moa-api.kimeujin03.workers.dev
         sleep 5
         echo "health: $(curl -sS -m 20 $URL/health)"
-        echo "parse: $(curl -sS -m 30 -w ' [%{http_code}]' -X POST $URL/v1/parse -H 'content-type: application/json' \
-          -d '{"text":"도서관 가는 길인데 좀 졸려","activities":[{"id":"study","name":"공부"},{"id":"move","name":"이동"}],"running":[],"now":"14:05"}')"
+        ask() { echo "$1 => $(curl -sS -m 30 -w ' [%{http_code}]' -X POST $URL/v1/parse -H 'content-type: application/json' -d "{\"text\":\"$1\",\"activities\":[\"공부\",\"과제\",\"이동\"],\"running\":[],\"now\":\"23:50\",\"today\":\"2026-11-16 월\"}")"; }
+        ask "도서관 가는 길인데 좀 졸려"
+        ask "다음주 화요일 3시에 교수님 면담 잡혔어"
+        ask "모레 저녁에 친구랑 밥 먹기로 함"
+        ask "주말 안에 빨래 돌려야 되는데"

@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { Moa } from '../components/Moa';
 import { StartGrid } from '../components/Pickers';
 import { useMoaMood } from '../components/useMoaMood';
+import { logicalToday } from '../lib/day';
 import { findGap } from '../lib/gaps';
 import { activeIntervals } from '../lib/intervals';
 import { SLEEP_ID } from '../lib/palette';
-import { dayStart, fmtDate, fmtDur, fmtHM } from '../lib/time';
+import { fmtDate, fmtDur, fmtHM } from '../lib/time';
 import { useStore } from '../store';
 import { GoalRow, TodoRow } from './Todos';
 
@@ -52,7 +53,7 @@ function GapCard({ now }: { now: number }) {
 /** 오늘까지인 할 일을 세 개까지만. 눈앞에 있어야 잊지 않는다. */
 function TodayTodos({ now, onOpen }: { now: number; onOpen: () => void }) {
   const todos = useStore((s) => s.todos);
-  const today = dayStart(now);
+  const today = useStore((s) => logicalToday(now, s.intervals));
   const due = todos.filter((t) => !t.done && t.type !== 'hours' && t.due !== null && t.due <= today).sort((a, b) => (a.start ?? a.due ?? 0) - (b.start ?? b.due ?? 0));
   const goals = todos.filter((t) => t.type === 'hours');
   if (!due.length && !goals.length) return null;
@@ -67,10 +68,10 @@ function TodayTodos({ now, onOpen }: { now: number; onOpen: () => void }) {
         </button>
       </div>
       {due.slice(0, 3).map((t) => (
-        <TodoRow key={t.id} todo={t} now={now} />
+        <TodoRow key={t.id} todo={t} now={today} />
       ))}
       {goals.slice(0, 2).map((t) => (
-        <GoalRow key={t.id} todo={t} now={now} />
+        <GoalRow key={t.id} todo={t} now={today} />
       ))}
     </div>
   );

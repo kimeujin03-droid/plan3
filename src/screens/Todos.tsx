@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Chevron } from '../components/common';
 import { CategoryChips } from '../components/Pickers';
+import { logicalDayEnd, logicalToday } from '../lib/day';
 import { totalsByActivity } from '../lib/intervals';
-import { addDays, addMonths, DAY, dayStart, fmtDue, fmtDur, fmtHM, fmtMD, fmtYM, fromDateInput, monthStart, toDateInput } from '../lib/time';
+import { addDays, addMonths, dayStart, fmtDue, fmtDur, fmtHM, fmtMD, fmtYM, fromDateInput, monthStart, toDateInput } from '../lib/time';
 import type { Activity, Interval, Todo } from '../lib/types';
 import { useStore } from '../store';
 
@@ -15,9 +16,9 @@ const TYPES: { id: PlanType; name: string; hint: string }[] = [
 ];
 
 /** 오늘 그 활동(하위 활동 포함)을 실제로 한 시간(ms) */
-export function doneToday(todo: Todo, intervals: Interval[], activities: Activity[], now: number): number {
-  const today = dayStart(now);
-  const totals = totalsByActivity(intervals, today, today + DAY, now);
+export function doneToday(todo: Todo, intervals: Interval[], activities: Activity[], today: number): number {
+  const now = Date.now();
+  const totals = totalsByActivity(intervals, today, logicalDayEnd(today, now), now);
   return activities.filter((a) => a.id === todo.activityId || a.parentId === todo.activityId).reduce((sum, a) => sum + (totals[a.id] ?? 0), 0);
 }
 
@@ -62,7 +63,7 @@ export function TodoRow({ todo, now }: { todo: Todo; now: number }) {
   const late = !todo.done && todo.due !== null && todo.due < dayStart(now);
   // 지우기는 완료와 헷갈리지 않게, 글자를 눌러 펼쳤을 때만 보인다.
   const [open, setOpen] = useState(false);
-  const range = todo.type === 'range' && todo.start !== undefined && todo.end !== undefined ? `${fmtHM(todo.start)}–${fmtHM(todo.end)}` : '';
+  const range = todo.start === undefined ? '' : todo.end === undefined ? fmtHM(todo.start) : `${fmtHM(todo.start)}–${fmtHM(todo.end)}`;
   return (
     <div className="todo">
       <button className="check" role="checkbox" aria-checked={todo.done} aria-label={`${todo.text} ${todo.done ? '끝냄 취소' : '끝냄'}`} onClick={() => toggle(todo.id)}>
@@ -301,7 +302,10 @@ function CalendarView({ now }: { now: number }) {
   );
 }
 
-export function Todos({ now }: { now: number }) {
+export function Todos({ now: clock }: { now: number }) {
+  const intervals = useStore((s) => s.intervals);
+  // 자기 전의 새벽은 아직 전날이다. 아래 화면들은 그 하루를 '오늘'로 쓴다.
+  const now = logicalToday(clock, intervals);
   const [view, setView] = useState<'list' | 'cal'>('list');
   return (
     <div className="screen">

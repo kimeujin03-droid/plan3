@@ -8,7 +8,8 @@ import { moaStorage } from './lib/storage';
 import { childColor, DEFAULT_ACTIVITIES, EXTRA_COLORS, SLEEP_ID } from './lib/palette';
 import { parse, type Command } from './lib/parser';
 import { recordPlanEdit } from './lib/plans';
-import { CELL, dayStart, fmtDur, fmtHM, fmtMD } from './lib/time';
+import { CELL, dayStart, fmtDue, fmtDur, fmtHM } from './lib/time';
+import { logicalToday } from './lib/day';
 import type { Activity, Data, EraseMode, PaintMode, TimerState, Todo } from './lib/types';
 
 export interface Reply {
@@ -157,8 +158,28 @@ export function applyCommand(d: Data, cmd: Command, now: number): string {
       return `${nameOf(d, target.activityId)} 끝 · ${fmtDur(now - target.start)}`;
     }
     case 'todo': {
-      d.todos = [...d.todos, { id: uid('todo'), text: cmd.text.slice(0, 80), due: cmd.due, done: false, doneAt: null, createdAt: now }];
-      return cmd.due === null ? `"${cmd.text}" 할 일에 넣어뒀어.` : `"${cmd.text}" ${fmtMD(cmd.due)}까지로 넣어뒀어.`;
+      const todo: Todo = { id: uid('todo'), text: cmd.text.slice(0, 80), due: cmd.due, done: false, doneAt: null, createdAt: now };
+      if (cmd.due === null) {
+        d.todos = [...d.todos, todo];
+        return `"${cmd.text}" 계획에 넣어뒀어.`;
+      }
+      // 자기 전의 새벽은 아직 전날이므로, "오늘·내일"은 그 하루를 기준으로 말한다.
+      const when = fmtDue(cmd.due, logicalToday(now, d.intervals));
+      if (cmd.start === undefined) {
+        d.todos = [...d.todos, todo];
+        return `"${cmd.text}" ${when}까지로 넣어뒀어.`;
+      }
+      if (cmd.end === undefined) {
+        d.todos = [...d.todos, { ...todo, start: cmd.start }];
+        return `${when} ${fmtHM(cmd.start)}에 "${cmd.text}" 넣어뒀어.`;
+      }
+      d.todos = [...d.todos, { ...todo, type: 'range', start: cmd.start, end: cmd.end, ...(cmd.activityId ? { activityId: cmd.activityId } : {}) }];
+      if (cmd.activityId) {
+        // 활동을 알면 격자에도 계획으로 칠해 둔다.
+        d.intervals = subtract(d.intervals, cmd.start, cmd.end, (iv) => iv.kind === 'plan', now);
+        d.intervals = mergeAdd(d.intervals, { activityId: cmd.activityId, kind: 'plan', start: cmd.start, end: cmd.end, source: 'chat' });
+      }
+      return `${when} ${fmtHM(cmd.start)}–${fmtHM(cmd.end)} "${cmd.text}" 계획으로 넣었어.`;
     }
     case 'backfill': {
       const act = ensureActivity(d, cmd.name, cmd.activityId);
@@ -229,7 +250,8 @@ export const useStore = create<Store>()(
         const s0 = get();
         const before = pickData(s0);
         const rawId = uid('raw');
-        const ruleCmds = parse(trimmed, s0.activities, now);
+        const today = logicalToday(now, s0.intervals);
+        const ruleCmds = parse(trimmed, s0.activities, now, today);
         if (!ruleCmds.length) return;
 
         // 명령을 반영하고 원문 기록의 결과 칸을 채운다. 시각은 말한 순간(now)을 쓴다.
@@ -257,7 +279,7 @@ export const useStore = create<Store>()(
             thinking: true,
           });
           const running = activeIntervals(s0.intervals).map((iv) => nameOf(s0, iv.activityId));
-          void aiParse(api, trimmed, s0.activities, running, now).then((aiCmds) =>
+          void aiParse(api, trimmed, s0.activities, running, now, today).then((aiCmds) =>
             aiCmds ? finish(aiCmds, 'ai') : finish(ruleCmds, 'rule'),
           );
           return;

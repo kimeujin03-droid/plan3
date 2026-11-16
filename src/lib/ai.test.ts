@@ -60,7 +60,7 @@ describe('AI 응답 받아들이기', () => {
 });
 
 describe('AI 서버 부르기', () => {
-  it('문장, 활동 이름, 시각만 보낸다', async () => {
+  it('문장, 활동 이름, 시각과 오늘 날짜만 보낸다', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ commands: [{ type: 'sleep' }] })));
     vi.stubGlobal('fetch', fetchMock);
     const cmds = await aiParse('https://api.test', '이제 눈 좀 붙일래', acts, ['과제'], now);
@@ -68,7 +68,8 @@ describe('AI 서버 부르기', () => {
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('https://api.test/v1/parse');
     const body = JSON.parse(init.body as string);
-    expect(Object.keys(body).sort()).toEqual(['activities', 'now', 'running', 'text']);
+    expect(Object.keys(body).sort()).toEqual(['activities', 'now', 'running', 'text', 'today']);
+    expect(body.today).toMatch(/^\d{4}-\d{2}-\d{2} [일월화수목금토]$/);
     expect(body.now).toBe('10:38');
   });
 
