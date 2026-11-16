@@ -36,3 +36,14 @@ jobs:
           GEMINI_API_KEY
       env:
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+    # 배포한 서버가 실제로 대답하는지 한 번 물어본다. 실패해도 배포 자체는 성공으로 둔다.
+    - name: Smoke test
+      if: env.CF_TOKEN != ''
+      continue-on-error: true
+      run: |
+        URL=https://moa-api.kimeujin03.workers.dev
+        sleep 5
+        echo "health: $(curl -sS -m 20 $URL/health)"
+        echo "parse: $(curl -sS -m 30 -w ' [%{http_code}]' -X POST $URL/v1/parse -H 'content-type: application/json' \
+          -d '{"text":"도서관 가는 길인데 좀 졸려","activities":[{"id":"study","name":"공부"},{"id":"move","name":"이동"}],"running":[],"now":"14:05"}')"

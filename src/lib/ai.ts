@@ -2,8 +2,10 @@ import { matchActivity, type Command } from './parser';
 import { dayStart, HOUR, MIN } from './time';
 import type { Activity } from './types';
 
-/** 빌드할 때 정해지는 기본 서버 주소. 비어 있으면 AI 해석은 꺼진 것과 같다. */
-export const DEFAULT_API: string = (import.meta.env?.VITE_MOA_API as string | undefined)?.replace(/\/+$/, '') ?? '';
+/** 기본 서버 주소. 빌드할 때 VITE_MOA_API로 바꿀 수 있다. */
+/** 운영 중인 서버. 주소는 비밀이 아니다(열쇠는 서버 안에만 있다). */
+const HOSTED_API = 'https://moa-api.kimeujin03.workers.dev';
+export const DEFAULT_API: string = ((import.meta.env?.VITE_MOA_API as string | undefined) || HOSTED_API).replace(/\/+$/, '');
 
 const TIMEOUT_MS = 7000;
 
