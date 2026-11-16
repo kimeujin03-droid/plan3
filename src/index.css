@@ -519,6 +519,29 @@ button {
   pointer-events: none;
 }
 
+/* 하루 격자의 지금: 현재 시간 줄 안의 세로선 */
+.nowline-v {
+  position: absolute;
+  width: 2px;
+  margin-left: -1px;
+  height: var(--row);
+  background: var(--ink);
+  border-radius: 1px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.nowline-v::before {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink);
+}
+
 /* 시계 */
 .overlay {
   position: fixed;

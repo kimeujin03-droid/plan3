@@ -201,7 +201,13 @@ export function Grid({ day, mode, activityId, now, onPickCell, onOpenCell }: Pro
             {c.note && <span className="memo">{c.note}</span>}
           </div>
         ))}
-        {isToday && <div className="nowline" style={{ top: `${((now - day) / DAY) * 100}%` }} />}
+        {/* 지금 시각: 이 시간 줄 안에서 분만큼 오른쪽으로 간 세로선. 1분마다 움직인다. */}
+        {isToday && (
+          <div
+            className="nowline-v"
+            style={{ top: `calc(var(--row) * ${new Date(now).getHours()})`, left: `${((new Date(now).getMinutes() + new Date(now).getSeconds() / 60) / 60) * 100}%` }}
+          />
+        )}
       </div>
     </div>
   );
