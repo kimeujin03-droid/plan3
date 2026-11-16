@@ -59,7 +59,7 @@ button {
   padding: 20px 20px 8px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .today-top {
@@ -101,15 +101,15 @@ button {
 
 .card {
   background: var(--card);
-  border-radius: 22px;
-  padding: 16px;
+  border-radius: 28px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
 .pill {
-  min-height: 44px;
+  min-height: 48px;
   padding: 0 16px;
   border-radius: 22px;
   background: var(--card);
@@ -134,9 +134,9 @@ button {
 }
 
 .icon-btn {
-  width: 44px;
-  height: 44px;
-  border-radius: 22px;
+  width: 48px;
+  height: 48px;
+  border-radius: 24px;
   background: var(--card);
   display: inline-flex;
   align-items: center;
@@ -166,7 +166,7 @@ button {
 }
 
 .seg button {
-  height: 44px;
+  height: 48px;
   border-radius: 20px;
   background: transparent;
   font-family: 'Jua', sans-serif;
@@ -258,8 +258,8 @@ button {
 }
 
 .nav button {
-  height: 46px;
-  border-radius: 23px;
+  height: 48px;
+  border-radius: 24px;
   background: transparent;
   font-family: 'Jua', sans-serif;
   font-size: 15px;
@@ -544,7 +544,9 @@ button {
 .ring {
   position: relative;
   align-self: center;
-  width: min(320px, 82vw);
+  /* 화면이 낮으면 원을 줄여 '끝났어'가 밀려 내려가지 않게 한다. */
+  width: min(320px, 82vw, 36dvh);
+  flex: none;
   aspect-ratio: 1;
 }
 
@@ -565,8 +567,9 @@ button {
 
 .ring .digits {
   font-family: 'Jua', sans-serif;
-  font-size: clamp(40px, 15vw, 60px);
+  font-size: clamp(34px, min(15vw, 6.6dvh), 60px);
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .scores {
@@ -1174,4 +1177,101 @@ a.link {
   font-style: normal;
   font-size: 10px;
   color: var(--sub);
+}
+
+/* 2차 종류 탭은 1차보다 얇게 */
+.seg.thin {
+  border-radius: 22px;
+  padding: 3px;
+}
+
+.seg.thin button {
+  height: 42px;
+  font-size: 14px;
+}
+
+.icon-btn.eraser[aria-pressed='true'] {
+  background: var(--ink);
+  color: #fff;
+}
+
+/* 이름을 누르면 시작, 화살표를 누르면 세부 항목 */
+.start.split {
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+
+.start.split button {
+  background: transparent;
+  min-height: 56px;
+  font-size: 16px;
+}
+
+.start.split .grow {
+  padding-left: 48px;
+}
+
+.start.split .more {
+  flex: none;
+  width: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-left: 1.5px solid rgba(38, 35, 58, 0.14);
+}
+
+.nav[hidden] {
+  display: none;
+}
+
+.todo-text {
+  background: transparent;
+  text-align: left;
+  font-size: 15px;
+  min-height: 44px;
+}
+
+/* 칸 상세 시트 */
+.sheet-back {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgba(38, 35, 58, 0.32);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.sheet {
+  width: 100%;
+  max-width: 520px;
+  max-height: 70dvh;
+  overflow-y: auto;
+  background: var(--card);
+  border-radius: 28px 28px 0 0;
+  padding: 20px 20px calc(20px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: toast-in 0.16s ease-out;
+}
+
+.sheet .field {
+  background: var(--bg);
+}
+
+.swatch.planned {
+  border: 2px dashed;
+}
+
+/* 계획은 점선 테두리, 한 일은 채움 */
+.cell .plan {
+  box-shadow: inset 0 0 0 1px rgba(38, 35, 58, 0.16);
+  outline: 1px dashed rgba(38, 35, 58, 0.28);
+  outline-offset: -2px;
+}
+
+.cells {
+  -webkit-touch-callout: none;
 }

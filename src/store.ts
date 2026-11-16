@@ -39,6 +39,8 @@ interface Store extends Data {
   addTodo: (text: string, due: number | null) => void;
   toggleTodo: (id: string) => void;
   removeTodo: (id: string) => void;
+  /** 기록 하나를 통째로 지운다. 되돌릴 수 있다. */
+  removeInterval: (id: string) => void;
   /** 칸 메모를 쓰거나(빈 글이면) 지운다. */
   setCellNote: (at: number, text: string) => void;
   /** 이어진 10분 칸 여러 개를 한 번에 칠한다. 주간 보기에서 한 시간씩 칠할 때 쓴다. */
@@ -310,6 +312,12 @@ export const useStore = create<Store>()(
       removeTodo: (id) => {
         const before = pickData(get());
         set({ todos: before.todos.filter((t) => t.id !== id), undoData: before, lastReply: { text: '할 일을 지웠어.', at: Date.now(), undo: true } });
+      },
+
+      removeInterval: (id) => {
+        const before = pickData(get());
+        if (!before.intervals.some((iv) => iv.id === id)) return;
+        set({ intervals: before.intervals.filter((iv) => iv.id !== id), undoData: before, lastReply: { text: '기록을 지웠어.', at: Date.now(), undo: true } });
       },
 
       setCellNote: (at, text) => {

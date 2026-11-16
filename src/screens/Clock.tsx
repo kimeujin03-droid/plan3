@@ -103,7 +103,7 @@ export function Clock({ now }: { now: number }) {
           잠깐 쉬기
         </button>
         <button className="big-btn ink" onClick={() => s.endActivity(main.activityId)}>
-          끝났어
+          {others.length ? `${nameOf(main.activityId)} 끝` : '끝났어'}
         </button>
       </div>
 
@@ -116,7 +116,7 @@ export function Clock({ now }: { now: number }) {
             </div>
           </div>
           <button className="pill" onClick={() => s.endActivity(iv.activityId)}>
-            끝났어
+            {nameOf(iv.activityId)}만 끝
           </button>
         </div>
       ))}

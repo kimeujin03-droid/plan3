@@ -10,6 +10,8 @@ export function TodoRow({ todo, now }: { todo: Todo; now: number }) {
   const toggle = useStore((s) => s.toggleTodo);
   const remove = useStore((s) => s.removeTodo);
   const late = !todo.done && todo.due !== null && todo.due < dayStart(now);
+  // 지우기는 완료와 헷갈리지 않게, 글자를 눌러 펼쳤을 때만 보인다.
+  const [open, setOpen] = useState(false);
   return (
     <div className="todo">
       <button className="check" role="checkbox" aria-checked={todo.done} aria-label={`${todo.text} ${todo.done ? '끝냄 취소' : '끝냄'}`} onClick={() => toggle(todo.id)}>
@@ -19,16 +21,15 @@ export function TodoRow({ todo, now }: { todo: Todo; now: number }) {
           </svg>
         )}
       </button>
-      <div className="grow" style={{ textDecoration: todo.done ? 'line-through' : undefined, color: todo.done ? 'var(--sub)' : undefined, fontSize: 15 }}>
+      <button className="grow todo-text" aria-expanded={open} style={{ textDecoration: todo.done ? 'line-through' : undefined, color: todo.done ? 'var(--sub)' : undefined }} onClick={() => setOpen(!open)}>
         {todo.text}
-      </div>
-      {todo.due !== null && !todo.done && <div className={late ? 'tag late' : 'tag'}>{fmtDue(todo.due, now)}</div>}
-      <button className="icon-btn" style={{ background: 'transparent', width: 36 }} aria-label={`${todo.text} 지우기`} onClick={() => remove(todo.id)}>
-        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <line x1="2" y1="2" x2="12" y2="12" />
-          <line x1="12" y1="2" x2="2" y2="12" />
-        </svg>
       </button>
+      {todo.due !== null && !todo.done && <div className={late ? 'tag late' : 'tag'}>{late ? '기한 지남 · ' : ''}{fmtDue(todo.due, now)}</div>}
+      {open && (
+        <button className="pill" style={{ background: 'var(--bg)', marginRight: 6 }} onClick={() => remove(todo.id)}>
+          지우기
+        </button>
+      )}
     </div>
   );
 }
@@ -166,7 +167,7 @@ function CalendarView({ now }: { now: number }) {
         </div>
       </div>
 
-      <div className="h2">{picked === today ? '오늘' : fmtMD(picked)}까지</div>
+      <div className="h2">{fmtMD(picked)} 할 일</div>
       {dueOn(picked).length > 0 && (
         <div className="card" style={{ gap: 2, padding: '6px 6px 6px 12px' }}>
           {dueOn(picked).map((t) => (

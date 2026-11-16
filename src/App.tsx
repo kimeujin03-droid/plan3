@@ -63,6 +63,31 @@ function Shell() {
   const running = useStore((s) => activeIntervals(s.intervals).length > 0);
   const now = useNow(running ? 1000 : 20_000);
 
+  // 글자를 치는 동안은 하단 탭을 숨겨 입력창이 키보드 바로 위에 오게 한다.
+  const [typing, setTyping] = useState(false);
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout>;
+    const isText = (el: EventTarget | null) =>
+      el instanceof HTMLTextAreaElement || (el instanceof HTMLInputElement && !['date', 'checkbox', 'button'].includes(el.type));
+    const on = (e: FocusEvent) => {
+      if (!isText(e.target)) return;
+      clearTimeout(t);
+      setTyping(true);
+    };
+    // 바로 되살리면 보내기 버튼을 누르는 순간 화면이 밀린다.
+    const off = () => {
+      clearTimeout(t);
+      t = setTimeout(() => setTyping(false), 200);
+    };
+    document.addEventListener('focusin', on);
+    document.addEventListener('focusout', off);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener('focusin', on);
+      document.removeEventListener('focusout', off);
+    };
+  }, []);
+
   // 뒤로가기 버튼: 열린 창 닫기 → 첫 화면 → 앱을 뒤로 보내기. 최신 상태를 ref로 읽는다.
   const nav = useRef({ tab, overlay });
   nav.current = { tab, overlay };
@@ -94,7 +119,7 @@ function Shell() {
 
   return (
     <div className="app">
-      {tab === 'home' && <Home now={now} onOpenSettings={() => setOverlay('settings')} onOpenTodos={() => setTab('todos')} />}
+      {tab === 'home' && <Home now={now} onOpenSettings={() => setOverlay('settings')} />}
       {tab === 'record' && <Record now={now} />}
       {tab === 'todos' && <Todos now={now} />}
       {tab === 'clock' && <Clock now={now} />}
@@ -104,7 +129,7 @@ function Shell() {
         {/* 첫 화면과 시계는 돌고 있는 타이머를 이미 크게 보여주므로 알약은 숨긴다. */}
         {tab !== 'clock' && <RunningBar now={now} onOpen={() => setTab('clock')} pills={tab !== 'home'} />}
         <InputBar />
-        <nav className="nav" aria-label="화면">
+        <nav className="nav" aria-label="화면" hidden={typing}>
           {TABS.map((t) => (
             <button key={t.id} aria-current={tab === t.id ? 'page' : undefined} onClick={() => setTab(t.id)}>
               {t.name}

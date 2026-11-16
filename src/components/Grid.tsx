@@ -10,6 +10,8 @@ interface Props {
   /** 'note'면 칠하지 않고, 누른 칸을 onPickCell로 알려준다. */
   mode: PaintMode | 'note';
   onPickCell?: (cellStart: number) => void;
+  /** 칸을 길게 눌렀을 때(마우스는 오른쪽 버튼) */
+  onOpenCell?: (cellStart: number) => void;
   activityId: string;
   now: number;
 }
@@ -21,7 +23,9 @@ const radius = (joinL: boolean, joinR: boolean) => {
   return `${l} ${r} ${r} ${l}`;
 };
 
-export function Grid({ day, mode, activityId, now, onPickCell }: Props) {
+const LONG_PRESS_MS = 450;
+
+export function Grid({ day, mode, activityId, now, onPickCell, onOpenCell }: Props) {
   const intervals = useStore((s) => s.intervals);
   const activities = useStore((s) => s.activities);
   const paint = useStore((s) => s.paint);
@@ -36,6 +40,8 @@ export function Grid({ day, mode, activityId, now, onPickCell }: Props) {
     y: 0,
     first: -1,
   });
+  const press = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(press.current), []);
   const nowRow = useRef<HTMLDivElement>(null);
   const isToday = day === dayStart(now);
   const minute = Math.floor(now / 60_000);
@@ -121,9 +127,21 @@ export function Grid({ day, mode, activityId, now, onPickCell }: Props) {
         role="img"
         aria-label="하루 24시간 격자. 한 시간이 가로 6칸."
         onPointerDown={(e) => {
-          drag.current = { down: true, on: false, last: -1, x: e.clientX, y: e.clientY, first: cellAt(e) };
+          if (e.button !== 0) return;
+          const first = cellAt(e);
+          drag.current = { down: true, on: false, last: -1, x: e.clientX, y: e.clientY, first };
           // 마우스는 스크롤과 헷갈릴 일이 없으니 바로 칠한다.
-          if (e.pointerType === 'mouse' && mode !== 'note') begin(e);
+          if (e.pointerType === 'mouse') {
+            if (mode !== 'note') begin(e);
+            return;
+          }
+          // 움직이지 않고 누르고 있으면 칠하지 않고 상세를 연다.
+          clearTimeout(press.current);
+          press.current = setTimeout(() => {
+            if (!drag.current.down || drag.current.on) return;
+            drag.current.down = false;
+            onOpenCell?.(day + first * CELL);
+          }, LONG_PRESS_MS);
         }}
         onPointerMove={(e) => {
           const d = drag.current;
@@ -131,12 +149,18 @@ export function Grid({ day, mode, activityId, now, onPickCell }: Props) {
           if (!d.on) {
             const dx = Math.abs(e.clientX - d.x);
             const dy = Math.abs(e.clientY - d.y);
+            if (dx > 8 || dy > 8) clearTimeout(press.current);
             if (dx < 8 || dx < dy) return;
             begin(e);
           }
           paintAt(cellAt(e));
         }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          if (!('ontouchstart' in window)) onOpenCell?.(day + cellAt(e as unknown as PointerEvent<HTMLDivElement>) * CELL);
+        }}
         onPointerUp={() => {
+          clearTimeout(press.current);
           const d = drag.current;
           // 움직이지 않고 뗐으면 한 칸 톡 누른 것.
           if (d.down && !d.on) {
@@ -150,6 +174,7 @@ export function Grid({ day, mode, activityId, now, onPickCell }: Props) {
         }}
         onPointerCancel={() => {
           // 브라우저가 스크롤로 가져갔다: 아무것도 칠하지 않는다.
+          clearTimeout(press.current);
           drag.current = { ...drag.current, down: false, on: false };
         }}
       >

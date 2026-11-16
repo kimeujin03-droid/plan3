@@ -22,7 +22,7 @@ function useGroups() {
 
 /**
  * 한 번 누르면 바로 시작하고, 돌고 있는 걸 누르면 끝나는 스톱워치 버튼 묶음.
- * 하위 활동이 있는 대주제는 누르면 아래로 열린다.
+ * 하위 활동이 있는 대주제는 이름을 누르면 바로 시작하고, 옆 화살표를 누르면 세부 항목이 열린다.
  */
 export function StartGrid({ now }: { now: number }) {
   const { tops, childrenOf } = useGroups();
@@ -57,10 +57,14 @@ export function StartGrid({ now }: { now: number }) {
         }
         const isOpen = open === top.id;
         return [
-          <button key={top.id} className="start" style={{ background: top.color }} aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : top.id)}>
-            <span className="grow">{top.name}</span>
-            <Caret open={isOpen} />
-          </button>,
+          <div key={top.id} className="start split" style={{ background: top.color }}>
+            <button className="grow" onClick={() => { start(top.id); setOpen(null); }} aria-label={`${top.name} 시작`}>
+              {top.name}
+            </button>
+            <button className="more" aria-expanded={isOpen} aria-label={`${top.name} 세부 항목`} onClick={() => setOpen(isOpen ? null : top.id)}>
+              <Caret open={isOpen} />
+            </button>
+          </div>,
           isOpen && (
             <div key={`${top.id}-kids`} className="kids">
               {kids.map((k) => (
@@ -68,9 +72,6 @@ export function StartGrid({ now }: { now: number }) {
                   {k.name}
                 </button>
               ))}
-              <button className="chip" style={{ background: top.color }} onClick={() => { start(top.id); setOpen(null); }}>
-                {top.name}만
-              </button>
             </div>
           ),
         ];

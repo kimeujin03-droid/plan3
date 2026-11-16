@@ -37,9 +37,10 @@ export function Review({ now }: { now: number }) {
   const days = Array.from({ length: 7 }, (_, i) => {
     const from = addDays(week, i);
     const vals = s.samples.filter((m) => m.kind === 'focus' && m.at >= from && m.at < from + DAY).map((m) => m.value);
-    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    return vals.length ? { avg: vals.reduce((a, b) => a + b, 0) / vals.length, n: vals.length } : null;
   });
   const anyFocus = days.some((d) => d !== null);
+  const sum = totals.reduce((a, [, g]) => a + g.total, 0);
 
   return (
     <div className="screen">
@@ -69,7 +70,7 @@ export function Review({ now }: { now: number }) {
           <div className="card">
             <div className="row between">
               <div className="sub" style={{ fontSize: 14 }}>
-                적어둔 시간
+                실제로 쓴 시간
               </div>
               <div className="jua" style={{ fontSize: 26 }}>
                 {fmtDur(union)}
@@ -108,6 +109,11 @@ export function Review({ now }: { now: number }) {
                 이 주에는 아직 적어둔 게 없어.
               </div>
             )}
+            {sum - union >= 60_000 && (
+              <div className="sub" style={{ fontSize: 12 }}>
+                같이 한 시간이 있어서 활동별 합({fmtDur(sum)})이 실제 시간보다 길어. 틀린 게 아니야.
+              </div>
+            )}
             {sleep > 0 && (
               <div className="sub" style={{ fontSize: 12 }}>
                 수면 {fmtDur(sleep)}은 따로 셌어
@@ -118,20 +124,29 @@ export function Review({ now }: { now: number }) {
           {anyFocus && (
             <div className="card">
               <div className="h2">요일별 집중도</div>
+              <div className="sub" style={{ fontSize: 12 }}>
+                점선은 안 적은 날이야. 0점이 아니야.
+              </div>
               <div className="week bars">
                 {days.map((v, i) =>
                   v === null ? (
-                    <div key={i} className="blank" />
+                    <div key={i} className="blank" aria-label={`${DOW[i]}요일 미기록`}>
+                      –
+                    </div>
                   ) : (
-                    <div key={i} style={{ height: `${Math.max(30, v * 20)}%`, background: FOCUS_SHADE[Math.round(v)], color: Math.round(v) === 5 ? '#fff' : undefined }}>
-                      {v.toFixed(1)}
+                    <div key={i} style={{ height: `${Math.max(30, v.avg * 20)}%`, background: FOCUS_SHADE[Math.round(v.avg)], color: Math.round(v.avg) === 5 ? '#fff' : undefined }}>
+                      {v.avg.toFixed(1)}
                     </div>
                   ),
                 )}
               </div>
               <div className="week days">
-                {DOW.map((d) => (
-                  <div key={d}>{d}</div>
+                {DOW.map((d, i) => (
+                  <div key={d}>
+                    {d}
+                    <br />
+                    {days[i] ? `${days[i]!.n}번` : ''}
+                  </div>
                 ))}
               </div>
             </div>
@@ -151,6 +166,11 @@ export function Review({ now }: { now: number }) {
                   {fmtMD(r.at)} {fmtHM(r.at)}
                 </div>
                 <div style={{ fontSize: 15 }}>{r.text}</div>
+                {r.reply && (
+                  <div className="sub" style={{ fontSize: 13 }}>
+                    → {r.reply}
+                  </div>
+                )}
               </div>
             ))}
         </>
