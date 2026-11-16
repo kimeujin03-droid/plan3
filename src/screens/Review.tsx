@@ -43,7 +43,6 @@ export function Review({ now }: { now: number }) {
 
   return (
     <div className="screen">
-      <div className="title">돌아보기</div>
       <div className="seg" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
         <button aria-pressed={tab === 'week'} onClick={() => setTab('week')}>
           이번 주

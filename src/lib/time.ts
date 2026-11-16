@@ -67,3 +67,41 @@ export function startedAfter(ms: number): string {
   const d = Math.floor(ms / DAY);
   return d <= 0 ? '말한 날 바로 시작' : `${d}일 만에 시작`;
 }
+
+export function monthStart(ms: number): number {
+  const d = new Date(dayStart(ms));
+  d.setDate(1);
+  return d.getTime();
+}
+
+export function addMonths(month: number, n: number): number {
+  const d = new Date(month);
+  d.setMonth(d.getMonth() + n);
+  return d.getTime();
+}
+
+export function fmtYM(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}년 ${d.getMonth() + 1}월`;
+}
+
+/** <input type="date"> 값(YYYY-MM-DD)과 그날 0시 사이의 변환 */
+export function toDateInput(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+export function fromDateInput(v: string): number | null {
+  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime() : null;
+}
+
+/** 기한을 오늘 기준으로 짧게: 오늘, 내일, 3일 뒤, 2일 지남 */
+export function fmtDue(due: number, now: number): string {
+  const diff = Math.round((due - dayStart(now)) / DAY);
+  if (diff === 0) return '오늘';
+  if (diff === 1) return '내일';
+  if (diff > 1 && diff < 7) return `${diff}일 뒤`;
+  if (diff < 0) return `${-diff}일 지남`;
+  return fmtMD(due);
+}

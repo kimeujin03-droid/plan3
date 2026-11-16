@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Moa } from '../components/Moa';
 import { StartGrid } from '../components/Pickers';
 import { activeIntervals } from '../lib/intervals';
 import { FOCUS_SHADE, SLEEP_ID } from '../lib/palette';
@@ -29,6 +30,7 @@ function Ring({ colors, digits, label }: { colors: string[]; digits: string; lab
 export function Clock({ now }: { now: number }) {
   const s = useStore();
   const [paused, setPaused] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
   const active = activeIntervals(s.intervals).filter((iv) => iv.activityId !== SLEEP_ID);
   const main = active[0];
   const others = active.slice(1);
@@ -85,7 +87,7 @@ export function Clock({ now }: { now: number }) {
             {fmtHM(main.start)}부터
           </div>
         </div>
-        <div className="swatch" style={{ background: act(main.activityId)?.color, width: 28, height: 28, borderRadius: 10 }} />
+        <Moa size={64} mood="focus" />
       </div>
 
       <Ring colors={ring} digits={fmtClock(now - main.start)} label="하는 중" />
@@ -135,14 +137,14 @@ export function Clock({ now }: { now: number }) {
         </div>
       </div>
 
-      {others.length === 0 && (
-        <div>
-          <div className="h2" style={{ marginBottom: 8 }}>
-            같이 하는 일 추가
-          </div>
+      {others.length === 0 &&
+        (adding ? (
           <StartGrid now={now} />
-        </div>
-      )}
+        ) : (
+          <button className="pill clear" style={{ alignSelf: 'center' }} onClick={() => setAdding(true)}>
+            + 같이 하는 일
+          </button>
+        ))}
     </div>
   );
 }

@@ -19,7 +19,7 @@ describe('AI 응답 받아들이기', () => {
     );
     expect(cmds).toEqual([
       { type: 'start', name: '과제', activityId: 'hw' },
-      { type: 'intent', label: '장보기', activityId: null },
+      { type: 'todo', text: '장보기', due: null },
     ]);
   });
 

@@ -35,6 +35,22 @@ export interface RawEntry {
   reply: string;
 }
 
+export interface Todo {
+  id: string;
+  text: string;
+  /** 기한인 날의 0시. 기한이 없으면 null. */
+  due: number | null;
+  done: boolean;
+  doneAt: number | null;
+  createdAt: number;
+}
+
+/** 격자 칸에 붙이는 짧은 메모. at은 그 10분 칸의 시작 시각. */
+export interface CellNote {
+  at: number;
+  text: string;
+}
+
 export interface Note {
   id: string;
   at: number;
@@ -61,6 +77,8 @@ export interface Data {
   raw: RawEntry[];
   notes: Note[];
   planVersions: PlanVersion[];
+  todos: Todo[];
+  cellNotes: CellNote[];
   sleeping: boolean;
   nudge: boolean;
   /** 못 알아들은 말을 AI 서버에 보내도 된다고 사용자가 켠 경우에만 true */

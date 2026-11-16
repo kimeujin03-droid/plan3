@@ -96,9 +96,9 @@ describe('구간과 격자', () => {
 });
 
 describe('모아 말 해석', () => {
-  it('"논문 써야지"는 시작이 아니라 의도', () => {
+  it('"논문 써야지"는 시작이 아니라 할 일', () => {
     const cmds = parse('논문 써야지', acts, now);
-    expect(cmds).toEqual([{ type: 'intent', label: '논문', activityId: 'paper' }]);
+    expect(cmds).toEqual([{ type: 'todo', text: '논문 쓰기', due: null }]);
   });
 
   it('"하기 싫어"는 기분만 기록', () => {
@@ -106,7 +106,7 @@ describe('모아 말 해석', () => {
   });
 
   it('"써야 되는데 하기 싫어"는 의도와 기분 둘 다', () => {
-    expect(parse('아 논문 써야 되는데 진짜 하기 싫어', acts, now).map((c) => c.type)).toEqual(['intent', 'mood']);
+    expect(parse('아 논문 써야 되는데 진짜 하기 싫어', acts, now).map((c) => c.type)).toEqual(['todo', 'mood']);
   });
 
   it('시작과 끝', () => {
@@ -161,11 +161,22 @@ describe('명령 반영', () => {
 });
 
 describe('대주제와 하위 활동', () => {
-  it('"해야지"는 타이머를 켜지 않고 메모로만 남는다', () => {
+  it('"해야지"는 타이머를 켜지 않고 할 일로 들어간다', () => {
     const d = emptyData();
-    applyCommand(d, { type: 'intent', label: '논문', activityId: 'paper' }, at(9));
+    applyCommand(d, { type: 'todo', text: '논문 쓰기', due: null }, at(9));
     expect(d.intervals).toHaveLength(0);
-    expect(d.notes).toHaveLength(1);
+    expect(d.todos).toHaveLength(1);
+    expect(d.todos[0]).toMatchObject({ text: '논문 쓰기', done: false, due: null });
+  });
+
+  it('"~까지"는 기한이 있는 할 일이 된다', () => {
+    // 2026-11-16은 월요일
+    expect(parse('금요일까지 수치해석 과제 제출', acts, now)).toEqual([{ type: 'todo', text: '수치해석 과제', due: day + 4 * 24 * HOUR }]);
+    expect(parse('내일까지 장보기 해야지', acts, now)).toEqual([{ type: 'todo', text: '장보기', due: day + 24 * HOUR }]);
+    expect(parse('11월 20일까지 보고서 내기', acts, now)).toEqual([{ type: 'todo', text: '보고서', due: day + 4 * 24 * HOUR }]);
+    expect(parse('3일까지 서류', acts, now)).toEqual([{ type: 'todo', text: '서류', due: new Date(2026, 11, 3).getTime() }]);
+    expect(parse('모아야 오늘까지 장보기', acts, now)).toEqual([{ type: 'todo', text: '장보기', due: day }]);
+    expect(parse('월요일까지 메일', acts, now)).toEqual([{ type: 'todo', text: '메일', due: day }]);
   });
 
   it('하위 활동 이름으로 말하면 그 하위 활동이 시작된다', () => {

@@ -8,7 +8,7 @@ import { moaStorage } from './lib/storage';
 import { childColor, DEFAULT_ACTIVITIES, EXTRA_COLORS, SLEEP_ID } from './lib/palette';
 import { parse, type Command } from './lib/parser';
 import { recordPlanEdit } from './lib/plans';
-import { dayStart, fmtDur, fmtHM } from './lib/time';
+import { CELL, dayStart, fmtDur, fmtHM, fmtMD } from './lib/time';
 import type { Activity, Data, PaintMode } from './lib/types';
 
 export interface Reply {
@@ -34,6 +34,15 @@ interface Store extends Data {
   /** 비어 있던 시간을 한 번에 채운다. */
   fillGap: (activityId: string, start: number, end: number) => void;
   dismissReply: () => void;
+  /** 방금 무언가를 끝낸 시각. 모아가 잠깐 신나 한다. 저장하지 않는다. */
+  cheerAt: number;
+  addTodo: (text: string, due: number | null) => void;
+  toggleTodo: (id: string) => void;
+  removeTodo: (id: string) => void;
+  /** 칸 메모를 쓰거나(빈 글이면) 지운다. */
+  setCellNote: (at: number, text: string) => void;
+  /** 이어진 10분 칸 여러 개를 한 번에 칠한다. 주간 보기에서 한 시간씩 칠할 때 쓴다. */
+  paintRange: (cellStart: number, cells: number, mode: PaintMode, activityId: string) => void;
   rateFocus: (value: number) => void;
   addActivity: (name: string, parentId?: string) => void;
   /** 기록에 쓰인 적 없고 하위 활동도 없을 때만 지운다. 지웠으면 true. */
@@ -53,6 +62,8 @@ export const emptyData = (): Data => ({
   raw: [],
   notes: [],
   planVersions: [],
+  todos: [],
+  cellNotes: [],
   sleeping: false,
   nudge: false,
   ai: false,
@@ -67,6 +78,8 @@ export function pickData(s: Data): Data {
     raw: s.raw,
     notes: s.notes,
     planVersions: s.planVersions,
+    todos: s.todos,
+    cellNotes: s.cellNotes,
     sleeping: s.sleeping,
     nudge: s.nudge,
     ai: s.ai,
@@ -129,10 +142,9 @@ export function applyCommand(d: Data, cmd: Command, now: number): string {
       if (target.activityId === SLEEP_ID) d.sleeping = false;
       return `${nameOf(d, target.activityId)} 끝 · ${fmtDur(now - target.start)}`;
     }
-    case 'intent': {
-      // "해야지"는 시작이 아니다. 타이머를 켜지 않고 메모로만 남긴다.
-      d.notes = [...d.notes, { id: uid('note'), at: now, kind: 'memo', text: `${cmd.label} 해야지` }];
-      return '메모로 적어뒀어. 시작할 땐 버튼만 눌러줘.';
+    case 'todo': {
+      d.todos = [...d.todos, { id: uid('todo'), text: cmd.text.slice(0, 80), due: cmd.due, done: false, doneAt: null, createdAt: now }];
+      return cmd.due === null ? `"${cmd.text}" 할 일에 넣어뒀어.` : `"${cmd.text}" ${fmtMD(cmd.due)}까지로 넣어뒀어.`;
     }
     case 'backfill': {
       const act = ensureActivity(d, cmd.name, cmd.activityId);
@@ -194,6 +206,7 @@ export const useStore = create<Store>()(
       undoData: null,
       lastReply: null,
       thinking: false,
+      cheerAt: 0,
 
       say: (text) => {
         const trimmed = text.trim();
@@ -249,20 +262,60 @@ export const useStore = create<Store>()(
 
       beginStroke: () => set({ undoData: pickData(get()) }),
 
-      paint: (cellStart, mode, activityId) => {
+      paint: (cellStart, mode, activityId) => get().paintRange(cellStart, 1, mode, activityId),
+
+      paintRange: (cellStart, cells, mode, activityId) => {
         const now = Date.now();
         const s = get();
-        if (mode === 'exec' && cellStart > now) {
-          // 아직 오지 않은 시간에 '했다'를 적으면 통계가 틀어진다. 계획으로만 칠하게 한다.
+        let intervals = s.intervals;
+        let blocked = false;
+        for (let i = 0; i < cells; i++) {
+          const at = cellStart + i * CELL;
+          if (mode === 'exec' && at > now) {
+            // 아직 오지 않은 시간에 '했다'를 적으면 통계가 틀어진다. 계획으로만 칠하게 한다.
+            blocked = true;
+            continue;
+          }
+          intervals = paintCell(intervals, at, activityId, mode, now);
+        }
+        if (blocked && intervals === s.intervals) {
           const text = '아직 안 온 시간은 계획으로만 칠할 수 있어.';
           if (s.lastReply?.text !== text || now - s.lastReply.at > 4000) set({ lastReply: { text, at: now } });
           return;
         }
-        const intervals = paintCell(s.intervals, cellStart, activityId, mode, now);
         if (intervals === s.intervals) return;
         const planVersions =
           mode === 'exec' ? s.planVersions : recordPlanEdit(s.planVersions, intervals, dayStart(cellStart), now);
         set({ intervals, planVersions });
+      },
+
+      addTodo: (text, due) => {
+        const t = text.trim().slice(0, 80);
+        if (!t) return;
+        const now = Date.now();
+        set({ todos: [...get().todos, { id: uid('todo'), text: t, due, done: false, doneAt: null, createdAt: now }] });
+      },
+
+      toggleTodo: (id) => {
+        const now = Date.now();
+        let finished = false;
+        const todos = get().todos.map((t) => {
+          if (t.id !== id) return t;
+          finished = !t.done;
+          return { ...t, done: !t.done, doneAt: t.done ? null : now };
+        });
+        set(finished ? { todos, cheerAt: now } : { todos });
+      },
+
+      removeTodo: (id) => {
+        const before = pickData(get());
+        set({ todos: before.todos.filter((t) => t.id !== id), undoData: before, lastReply: { text: '할 일을 지웠어.', at: Date.now(), undo: true } });
+      },
+
+      setCellNote: (at, text) => {
+        const t = text.trim().slice(0, 40);
+        const rest = get().cellNotes.filter((n) => n.at !== at);
+        set({ cellNotes: t ? [...rest, { at, text: t }] : rest });
       },
 
       startActivity: (activityId) => {
@@ -279,7 +332,7 @@ export const useStore = create<Store>()(
         const before = pickData(get());
         const d: Data = { ...before };
         const reply = applyCommand(d, { type: 'end', activityId }, now);
-        set({ ...d, undoData: before, lastReply: { text: reply, at: now, undo: true } });
+        set({ ...d, undoData: before, lastReply: { text: reply, at: now, undo: true }, cheerAt: now });
       },
 
       endActivityAt: (activityId, at) => {
@@ -378,6 +431,8 @@ export const useStore = create<Store>()(
             raw: arr(p.raw).filter((r) => r && typeof r.text === 'string' && Number.isFinite(r.at)),
             notes: arr(p.notes).filter((n) => n && typeof n.text === 'string' && Number.isFinite(n.at)),
             planVersions: arr(p.planVersions).filter((v) => v && Number.isFinite(v.day) && Array.isArray(v.items)),
+            todos: arr(p.todos).filter((t) => t && typeof t.id === 'string' && typeof t.text === 'string' && (t.due === null || Number.isFinite(t.due))),
+            cellNotes: arr(p.cellNotes).filter((n) => n && Number.isFinite(n.at) && typeof n.text === 'string'),
             sleeping: intervals.some((iv) => iv.activityId === SLEEP_ID && iv.end === null),
             nudge: cur.nudge,
             ai: cur.ai,

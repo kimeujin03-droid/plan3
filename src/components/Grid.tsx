@@ -7,7 +7,9 @@ import { useStore } from '../store';
 
 interface Props {
   day: number;
-  mode: PaintMode;
+  /** 'note'면 칠하지 않고, 누른 칸을 onPickCell로 알려준다. */
+  mode: PaintMode | 'note';
+  onPickCell?: (cellStart: number) => void;
   activityId: string;
   now: number;
 }
@@ -19,10 +21,11 @@ const radius = (joinL: boolean, joinR: boolean) => {
   return `${l} ${r} ${r} ${l}`;
 };
 
-export function Grid({ day, mode, activityId, now }: Props) {
+export function Grid({ day, mode, activityId, now, onPickCell }: Props) {
   const intervals = useStore((s) => s.intervals);
   const activities = useStore((s) => s.activities);
   const paint = useStore((s) => s.paint);
+  const cellNotes = useStore((s) => s.cellNotes);
   const beginStroke = useStore((s) => s.beginStroke);
   // 손가락이 닿은 뒤 가로로 움직이기 시작해야 칠한다. 세로로 움직이면 브라우저가 스크롤로 가져간다.
   const drag = useRef<{ down: boolean; on: boolean; last: number; x: number; y: number; first: number }>({
@@ -42,6 +45,11 @@ export function Grid({ day, mode, activityId, now }: Props) {
     const dayIv = intervals.filter((iv) => iv.start < day + DAY && (iv.end === null ? now : iv.end) > day);
     const infos = Array.from({ length: 144 }, (_, i) => cellInfo(dayIv, day + i * CELL, now));
     const at = (i: number) => (i >= 0 && i < 144 ? infos[i] : { plan: null, exec: [] as string[] });
+    const notes = new Map<number, string>();
+    for (const n of cellNotes) {
+      const i = Math.floor((n.at - day) / CELL);
+      if (i >= 0 && i < 144) notes.set(i, n.text);
+    }
     return infos.map((c, i) => {
       const p = at(i - 1);
       const n = at(i + 1);
@@ -64,11 +72,12 @@ export function Grid({ day, mode, activityId, now }: Props) {
         label,
         muted,
         label2: e2 && p.exec[1] !== e2 ? byId.get(e2)?.name ?? '' : '',
+        note: notes.get(i) ?? '',
       };
     });
     // 분 단위로만 다시 계산한다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [intervals, activities, day, minute]);
+  }, [intervals, activities, cellNotes, day, minute]);
 
   useEffect(() => {
     nowRow.current?.scrollIntoView({ block: 'start' });
@@ -81,7 +90,7 @@ export function Grid({ day, mode, activityId, now }: Props) {
     return row * 6 + col;
   };
   const paintAt = (i: number) => {
-    if (drag.current.last === i) return;
+    if (mode === 'note' || drag.current.last === i) return;
     drag.current.last = i;
     paint(day + i * CELL, mode, activityId);
   };
@@ -114,11 +123,11 @@ export function Grid({ day, mode, activityId, now }: Props) {
         onPointerDown={(e) => {
           drag.current = { down: true, on: false, last: -1, x: e.clientX, y: e.clientY, first: cellAt(e) };
           // 마우스는 스크롤과 헷갈릴 일이 없으니 바로 칠한다.
-          if (e.pointerType === 'mouse') begin(e);
+          if (e.pointerType === 'mouse' && mode !== 'note') begin(e);
         }}
         onPointerMove={(e) => {
           const d = drag.current;
-          if (!d.down) return;
+          if (!d.down || mode === 'note') return;
           if (!d.on) {
             const dx = Math.abs(e.clientX - d.x);
             const dy = Math.abs(e.clientY - d.y);
@@ -131,8 +140,11 @@ export function Grid({ day, mode, activityId, now }: Props) {
           const d = drag.current;
           // 움직이지 않고 뗐으면 한 칸 톡 누른 것.
           if (d.down && !d.on) {
-            beginStroke();
-            paintAt(d.first);
+            if (mode === 'note') onPickCell?.(day + d.first * CELL);
+            else {
+              beginStroke();
+              paintAt(d.first);
+            }
           }
           drag.current = { ...d, down: false, on: false };
         }}
@@ -161,6 +173,7 @@ export function Grid({ day, mode, activityId, now }: Props) {
               <span style={{ top: c.two ? 7 : 12, color: c.muted ? '#5b5680' : undefined }}>{c.label}</span>
             )}
             {c.label2 && <span className="l2">{c.label2}</span>}
+            {c.note && <span className="memo">{c.note}</span>}
           </div>
         ))}
         {isToday && <div className="nowline" style={{ top: `${((now - day) / DAY) * 100}%` }} />}

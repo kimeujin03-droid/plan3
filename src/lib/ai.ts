@@ -48,7 +48,7 @@ export function toCommands(wire: unknown, activities: Activity[], now: number): 
         out.push({ type: 'end', activityId: act?.id ?? null });
         break;
       case 'intent':
-        if (name) out.push({ type: 'intent', label: name, activityId: act?.id ?? null });
+        if (name) out.push({ type: 'todo', text: name, due: null });
         break;
       case 'backfill': {
         const start = clock(raw.start, base);

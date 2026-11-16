@@ -1,10 +1,11 @@
-import { dayStart, HOUR, MIN } from './time';
+import { addDays, dayStart, HOUR, MIN } from './time';
 import type { Activity } from './types';
 
 export type Command =
   | { type: 'start'; name: string; activityId: string | null }
   | { type: 'end'; activityId: string | null }
-  | { type: 'intent'; label: string; activityId: string | null }
+  /** 할 일 목록에 넣기. due는 그날 0시(없으면 null). */
+  | { type: 'todo'; text: string; due: number | null }
   | { type: 'backfill'; name: string; activityId: string | null; start: number; end: number }
   | { type: 'sleep' }
   | { type: 'wake' }
@@ -44,6 +45,29 @@ const MOOD = /(하기\s*싫|귀찮|피곤|힘들|졸려|기분이?\s*(아냐|아
 const END = /(끝났|끝냈|끝낼|끝!|끝$|그만|다\s*했|마쳤|종료)/;
 const START = /(.*?)\s*(시작|할게|할래|한다|하러|해볼게|하는\s*중)/;
 
+const DOW = '일월화수목금토';
+const DUE = /^(오늘|내일|모레|(\d{1,2})\s*월\s*(\d{1,2})\s*일|(\d{1,2})\s*일|([일월화수목금토])요일)\s*까지\s*(.+)$/;
+const TODO_TAIL = /\s*(해야지|해야\s*하는데|해야\s*되는데|해야\s*돼|해야\s*해|해야\s*함|해야겠다|하기|제출|내기)$/;
+
+/** "내일", "금요일", "11월 20일" 같은 말을 그날 0시로 바꾼다. 이미 지난 날짜는 다음 달·다음 해로 본다. */
+export function parseDue(m: RegExpMatchArray, now: number): number {
+  const today = dayStart(now);
+  if (m[1] === '오늘') return today;
+  if (m[1] === '내일') return addDays(today, 1);
+  if (m[1] === '모레') return addDays(today, 2);
+  const d = new Date(today);
+  if (m[2] && m[3]) {
+    const t = new Date(d.getFullYear(), Number(m[2]) - 1, Number(m[3])).getTime();
+    return t >= today ? t : new Date(d.getFullYear() + 1, Number(m[2]) - 1, Number(m[3])).getTime();
+  }
+  if (m[4]) {
+    const t = new Date(d.getFullYear(), d.getMonth(), Number(m[4])).getTime();
+    return t >= today ? t : new Date(d.getFullYear(), d.getMonth() + 1, Number(m[4])).getTime();
+  }
+  const diff = (DOW.indexOf(m[5]) - d.getDay() + 7) % 7;
+  return addDays(today, diff);
+}
+
 export function parse(text: string, activities: Activity[], now: number): Command[] {
   const t = text.trim();
   if (!t) return [];
@@ -73,11 +97,19 @@ export function parse(text: string, activities: Activity[], now: number): Comman
     }
   }
 
+  // clean()은 맨 앞의 '오늘'을 지우므로, 기한은 부르는 말만 뗀 원문에서 찾는다.
+  const due = t.replace(/^(모아야|모아|나)[\s,]+/, '').match(DUE);
+  if (due) {
+    const what = due[6].replace(/[.!~…]+$/g, '').replace(TODO_TAIL, '').trim();
+    if (what) return [{ type: 'todo', text: what, due: parseDue(due, now) }];
+  }
+
   const out: Command[] = [];
   const intent = t.match(INTENT);
   if (intent) {
+    // "논문 써야지"는 시작이 아니라 할 일이다.
     const label = clean(intent[1]);
-    if (label) out.push({ type: 'intent', label, activityId: matchActivity(label, activities)?.id ?? null });
+    if (label) out.push({ type: 'todo', text: /^써/.test(intent[2]) ? `${label} 쓰기` : label, due: null });
   }
   if (MOOD.test(t)) out.push({ type: 'mood', text: t });
   if (out.length) return out;

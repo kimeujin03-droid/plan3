@@ -6,19 +6,19 @@ import { activeIntervals } from './lib/intervals';
 import { flushStorage } from './lib/storage';
 import { Clock } from './screens/Clock';
 import { Home } from './screens/Home';
-import { Review } from './screens/Review';
 import { Settings } from './screens/Settings';
-import { Today } from './screens/Today';
+import { Record } from './screens/Record';
+import { Todos } from './screens/Todos';
 import { useStore } from './store';
 
-type Tab = 'home' | 'today' | 'clock' | 'review';
+type Tab = 'home' | 'record' | 'todos' | 'clock';
 type Overlay = 'settings' | null;
 
 const TABS: { id: Tab; name: string }[] = [
   { id: 'home', name: '모아' },
-  { id: 'today', name: '오늘' },
+  { id: 'record', name: '기록' },
+  { id: 'todos', name: '할 일' },
   { id: 'clock', name: '시계' },
-  { id: 'review', name: '돌아보기' },
 ];
 
 /** 화면 어딘가에서 오류가 나도 흰 화면 대신 다시 시작할 길을 준다. 기록은 건드리지 않는다. */
@@ -33,7 +33,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean
     if (!this.state.failed) return this.props.children;
     return (
       <div className="boot" role="alert">
-        <Moa size={10} closed />
+        <Moa size={120} mood="tired" />
         <div className="jua" style={{ fontSize: 22 }}>
           앗, 화면을 그리다 넘어졌어
         </div>
@@ -94,10 +94,10 @@ function Shell() {
 
   return (
     <div className="app">
-      {tab === 'home' && <Home now={now} onOpenSettings={() => setOverlay('settings')} />}
-      {tab === 'today' && <Today now={now} />}
+      {tab === 'home' && <Home now={now} onOpenSettings={() => setOverlay('settings')} onOpenTodos={() => setTab('todos')} />}
+      {tab === 'record' && <Record now={now} />}
+      {tab === 'todos' && <Todos now={now} />}
       {tab === 'clock' && <Clock now={now} />}
-      {tab === 'review' && <Review now={now} />}
 
       <div className="dock">
         <Toast />
@@ -124,7 +124,7 @@ export default function App() {
     // 저장된 기록을 읽기 전에는 아무것도 그리지 않는다: 빈 상태로 덮어쓰는 일을 막는다.
     return (
       <div className="boot" aria-busy="true">
-        <Moa size={10} />
+        <Moa size={120} />
       </div>
     );
   }
