@@ -7,7 +7,7 @@ import type { Activity } from './types';
 const HOSTED_API = 'https://moa-api.kimeujin03.workers.dev';
 export const DEFAULT_API: string = ((import.meta.env?.VITE_MOA_API as string | undefined) || HOSTED_API).replace(/\/+$/, '');
 
-const TIMEOUT_MS = 7000;
+const TIMEOUT_MS = 12000;
 
 interface WireCommand {
   type?: unknown;
