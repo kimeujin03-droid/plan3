@@ -2,11 +2,10 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { aiParse, DEFAULT_API } from './lib/ai';
 import { uid } from './lib/id';
-import { mentionIntent } from './lib/intents';
 import { activeIntervals, mergeAdd, paintCell } from './lib/intervals';
 import { rescheduleNudge } from './lib/notify';
 import { moaStorage } from './lib/storage';
-import { DEFAULT_ACTIVITIES, EXTRA_COLORS, SLEEP_ID } from './lib/palette';
+import { childColor, DEFAULT_ACTIVITIES, EXTRA_COLORS, SLEEP_ID } from './lib/palette';
 import { parse, type Command } from './lib/parser';
 import { recordPlanEdit } from './lib/plans';
 import { dayStart, fmtDur, fmtHM } from './lib/time';
@@ -15,6 +14,8 @@ import type { Activity, Data, PaintMode } from './lib/types';
 export interface Reply {
   text: string;
   at: number;
+  /** 되돌리기 버튼을 같이 보여줄지 */
+  undo?: boolean;
 }
 
 interface Store extends Data {
@@ -28,8 +29,15 @@ interface Store extends Data {
   paint: (cellStart: number, mode: PaintMode, activityId: string) => void;
   startActivity: (activityId: string) => void;
   endActivity: (activityId: string) => void;
+  /** 끄는 걸 잊은 타이머를 지난 시각으로 끝낸다. */
+  endActivityAt: (activityId: string, at: number) => void;
+  /** 비어 있던 시간을 한 번에 채운다. */
+  fillGap: (activityId: string, start: number, end: number) => void;
+  dismissReply: () => void;
   rateFocus: (value: number) => void;
-  addActivity: (name: string) => void;
+  addActivity: (name: string, parentId?: string) => void;
+  /** 기록에 쓰인 적 없고 하위 활동도 없을 때만 지운다. 지웠으면 true. */
+  removeActivity: (id: string) => boolean;
   renameActivity: (id: string, name: string) => void;
   setNudge: (on: boolean) => void;
   setAi: (on: boolean) => void;
@@ -43,7 +51,6 @@ export const emptyData = (): Data => ({
   intervals: [],
   samples: [],
   raw: [],
-  intents: [],
   notes: [],
   planVersions: [],
   sleeping: false,
@@ -58,7 +65,6 @@ export function pickData(s: Data): Data {
     intervals: s.intervals,
     samples: s.samples,
     raw: s.raw,
-    intents: s.intents,
     notes: s.notes,
     planVersions: s.planVersions,
     sleeping: s.sleeping,
@@ -68,14 +74,20 @@ export function pickData(s: Data): Data {
   };
 }
 
-function ensureActivity(d: Data, name: string, id: string | null): Activity {
+function ensureActivity(d: Data, name: string, id: string | null, parentId?: string): Activity {
   const found = id ? d.activities.find((a) => a.id === id) : d.activities.find((a) => a.name === name);
   if (found) return found;
-  const custom = d.activities.length - DEFAULT_ACTIVITIES.length;
+  const parent = parentId ? d.activities.find((a) => a.id === parentId && !a.parentId) : undefined;
+  const siblings = parent ? d.activities.filter((a) => a.parentId === parent.id).length : 0;
+  const custom = d.activities.filter((a) => !a.parentId).length - DEFAULT_ACTIVITIES.length;
   const act: Activity = {
     id: uid('act'),
     name,
-    color: EXTRA_COLORS[((custom % EXTRA_COLORS.length) + EXTRA_COLORS.length) % EXTRA_COLORS.length],
+    // 하위 활동은 대주제 색의 진하고 연한 변주를 받는다.
+    color: parent
+      ? childColor(parent.color, siblings)
+      : EXTRA_COLORS[((custom % EXTRA_COLORS.length) + EXTRA_COLORS.length) % EXTRA_COLORS.length],
+    ...(parent ? { parentId: parent.id } : {}),
   };
   d.activities = [...d.activities, act];
   return act;
@@ -105,7 +117,7 @@ export function applyCommand(d: Data, cmd: Command, now: number): string {
         ...d.intervals,
         { id: uid('iv'), activityId: act.id, kind: 'exec', start: now, end: null, source: 'timer' },
       ];
-      return `${fmtHM(now)}부터 ${act.name} 시작으로 적어놨어.`;
+      return `${act.name} 시작! ${fmtHM(now)}부터 적을게.`;
     }
     case 'end': {
       const active = activeIntervals(d.intervals);
@@ -115,11 +127,12 @@ export function applyCommand(d: Data, cmd: Command, now: number): string {
       if (!target) return '지금 하는 중으로 적힌 게 없어.';
       closeInterval(d, target.id, now);
       if (target.activityId === SLEEP_ID) d.sleeping = false;
-      return `${nameOf(d, target.activityId)} 끝으로 적었어. ${fmtDur(now - target.start)} 했네.`;
+      return `${nameOf(d, target.activityId)} 끝 · ${fmtDur(now - target.start)}`;
     }
     case 'intent': {
-      d.intents = mentionIntent(d.intents, cmd.label, cmd.activityId, now);
-      return `"${cmd.label}"은 하려던 일로 적어둘게. 실제 시작은 아직으로 둘게.`;
+      // "해야지"는 시작이 아니다. 타이머를 켜지 않고 메모로만 남긴다.
+      d.notes = [...d.notes, { id: uid('note'), at: now, kind: 'memo', text: `${cmd.label} 해야지` }];
+      return '메모로 적어뒀어. 시작할 땐 버튼만 눌러줘.';
     }
     case 'backfill': {
       const act = ensureActivity(d, cmd.name, cmd.activityId);
@@ -201,7 +214,7 @@ export const useStore = create<Store>()(
           d.raw = d.raw.some((r) => r.id === rawId)
             ? d.raw.map((r) => (r.id === rawId ? { ...r, action, reply } : r))
             : [...d.raw, { id: rawId, at: now, text: trimmed, action, reply }];
-          set({ ...d, undoData: before, lastReply: { text: reply, at: Date.now() }, thinking: false });
+          set({ ...d, undoData: before, lastReply: { text: reply, at: Date.now(), undo: true }, thinking: false });
           void rescheduleNudge(d.nudge && !d.sleeping);
         };
 
@@ -232,6 +245,8 @@ export const useStore = create<Store>()(
         set({ ...u, raw: get().raw, undoData: null, lastReply: { text: '방금 건 되돌렸어.', at: Date.now() } });
       },
 
+      dismissReply: () => set({ lastReply: null }),
+
       beginStroke: () => set({ undoData: pickData(get()) }),
 
       paint: (cellStart, mode, activityId) => {
@@ -255,8 +270,8 @@ export const useStore = create<Store>()(
         const before = pickData(get());
         const d: Data = { ...before };
         const reply = applyCommand(d, { type: 'start', name: nameOf(d, activityId), activityId }, now);
-        set({ ...d, undoData: before, lastReply: { text: reply, at: now } });
-        rescheduleNudge(d.nudge && !d.sleeping);
+        set({ ...d, undoData: before, lastReply: { text: reply, at: now, undo: true } });
+        void rescheduleNudge(d.nudge && !d.sleeping);
       },
 
       endActivity: (activityId) => {
@@ -264,7 +279,33 @@ export const useStore = create<Store>()(
         const before = pickData(get());
         const d: Data = { ...before };
         const reply = applyCommand(d, { type: 'end', activityId }, now);
-        set({ ...d, undoData: before, lastReply: { text: reply, at: now } });
+        set({ ...d, undoData: before, lastReply: { text: reply, at: now, undo: true } });
+      },
+
+      endActivityAt: (activityId, at) => {
+        const before = pickData(get());
+        const target = activeIntervals(before.intervals).find((iv) => iv.activityId === activityId);
+        if (!target) return;
+        const end = Math.min(Date.now(), Math.max(at, target.start + 60_000));
+        const d: Data = { ...before };
+        closeInterval(d, target.id, end);
+        if (activityId === SLEEP_ID) d.sleeping = false;
+        set({
+          ...d,
+          undoData: before,
+          lastReply: { text: `${nameOf(d, activityId)} ${fmtHM(end)}에 끝난 걸로 고쳤어.`, at: Date.now(), undo: true },
+        });
+      },
+
+      fillGap: (activityId, start, end) => {
+        if (end <= start) return;
+        const before = pickData(get());
+        const intervals = mergeAdd(before.intervals, { activityId, kind: 'exec', start, end, source: 'chat' });
+        set({
+          intervals,
+          undoData: before,
+          lastReply: { text: `${fmtHM(start)}–${fmtHM(end)} ${nameOf(before, activityId)}(으)로 채웠어.`, at: Date.now(), undo: true },
+        });
       },
 
       rateFocus: (value) => {
@@ -274,12 +315,21 @@ export const useStore = create<Store>()(
         set({ samples: d.samples });
       },
 
-      addActivity: (name) => {
-        const n = name.trim();
+      addActivity: (name, parentId) => {
+        const n = name.trim().slice(0, 20);
         if (!n) return;
         const d: Data = { ...pickData(get()) };
-        ensureActivity(d, n, null);
+        ensureActivity(d, n, null, parentId);
         set({ activities: d.activities });
+      },
+
+      removeActivity: (id) => {
+        const s = get();
+        const used = s.intervals.some((iv) => iv.activityId === id) || s.samples.some((m) => m.activityId === id);
+        const hasChildren = s.activities.some((a) => a.parentId === id);
+        if (used || hasChildren || id === SLEEP_ID) return false;
+        set({ activities: s.activities.filter((a) => a.id !== id) });
+        return true;
       },
 
       renameActivity: (id, name) => {
@@ -306,6 +356,10 @@ export const useStore = create<Store>()(
           );
           if (!activities.length) return false;
           const known = new Set(activities.map((a) => a.id));
+          // 대주제가 없는 하위 활동은 대주제로 올린다.
+          for (const a of activities) {
+            if (a.parentId && (!known.has(a.parentId) || a.parentId === a.id)) delete a.parentId;
+          }
           const intervals = arr(p.intervals).filter(
             (iv) =>
               iv &&
@@ -322,7 +376,6 @@ export const useStore = create<Store>()(
             intervals,
             samples: arr(p.samples).filter((m) => m && Number.isFinite(m.at) && Number.isFinite(m.value)),
             raw: arr(p.raw).filter((r) => r && typeof r.text === 'string' && Number.isFinite(r.at)),
-            intents: arr(p.intents).filter((it) => it && typeof it.label === 'string' && Array.isArray(it.mentions) && it.mentions.length),
             notes: arr(p.notes).filter((n) => n && typeof n.text === 'string' && Number.isFinite(n.at)),
             planVersions: arr(p.planVersions).filter((v) => v && Number.isFinite(v.day) && Array.isArray(v.items)),
             sleeping: intervals.some((iv) => iv.activityId === SLEEP_ID && iv.end === null),

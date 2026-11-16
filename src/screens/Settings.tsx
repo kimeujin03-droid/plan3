@@ -12,6 +12,40 @@ function Switch({ on, label, onToggle }: { on: boolean; label: string; onToggle:
   return <button className="switch" role="switch" aria-checked={on} aria-label={label} onClick={onToggle} />;
 }
 
+function ActivityRow({ id, onMsg, onAddChild }: { id: string; onMsg: (m: string) => void; onAddChild?: () => void }) {
+  const a = useStore((s) => s.activities.find((x) => x.id === id));
+  const rename = useStore((s) => s.renameActivity);
+  const remove = useStore((s) => s.removeActivity);
+  if (!a) return null;
+  return (
+    <div className="row">
+      <div className="swatch" style={{ background: a.color, width: 22, height: 22, borderRadius: 8 }} />
+      <input className="field grow" aria-label={`${a.name} 이름`} defaultValue={a.name} maxLength={20} onBlur={(e) => rename(a.id, e.target.value)} />
+      {onAddChild && (
+        <button className="icon-btn" style={{ background: 'var(--bg)' }} aria-label={`${a.name}에 하위 활동 추가`} onClick={onAddChild}>
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <line x1="7" y1="2" x2="7" y2="12" />
+            <line x1="2" y1="7" x2="12" y2="7" />
+          </svg>
+        </button>
+      )}
+      <button
+        className="icon-btn"
+        style={{ background: 'var(--bg)' }}
+        aria-label={`${a.name} 지우기`}
+        onClick={() => {
+          if (!remove(a.id)) onMsg(`${a.name}은(는) 기록에 쓰였거나 하위 활동이 있어서 지울 수 없어. 이름은 바꿀 수 있어.`);
+        }}
+      >
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <line x1="2" y1="2" x2="12" y2="12" />
+          <line x1="12" y1="2" x2="2" y2="12" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
 export function Settings({ onClose }: { onClose: () => void }) {
   const s = useStore();
   const [name, setName] = useState('');
@@ -20,6 +54,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const [confirmWipe, setConfirmWipe] = useState(false);
   const [showServer, setShowServer] = useState(false);
   const [server, setServer] = useState(s.apiOverride);
+  const [subFor, setSubFor] = useState<string | null>(null);
+  const [subName, setSubName] = useState('');
   const api = s.apiOverride || DEFAULT_API;
 
   const toggleNudge = async () => {
@@ -62,18 +98,36 @@ export function Settings({ onClose }: { onClose: () => void }) {
 
         <div className="card">
           <div className="h2">활동</div>
+          <div className="sub">＋를 누르면 대주제 아래에 하위 활동이 생겨. 예: 논문 › Starlink</div>
           {s.activities
-            .filter((a) => a.id !== SLEEP_ID)
-            .map((a) => (
-              <div className="row" key={a.id}>
-                <div className="swatch" style={{ background: a.color, width: 22, height: 22, borderRadius: 8 }} />
-                <input
-                  className="field grow"
-                  aria-label={`${a.name} 이름`}
-                  defaultValue={a.name}
-                  maxLength={20}
-                  onBlur={(e) => s.renameActivity(a.id, e.target.value)}
-                />
+            .filter((a) => !a.parentId && a.id !== SLEEP_ID)
+            .map((top) => (
+              <div key={top.id} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <ActivityRow id={top.id} onMsg={setMsg} onAddChild={() => { setSubFor(top.id); setSubName(''); }} />
+                {s.activities
+                  .filter((k) => k.parentId === top.id)
+                  .map((k) => (
+                    <div key={k.id} style={{ paddingLeft: 30 }}>
+                      <ActivityRow id={k.id} onMsg={setMsg} />
+                    </div>
+                  ))}
+                {subFor === top.id && (
+                  <form
+                    className="row"
+                    style={{ paddingLeft: 30 }}
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      s.addActivity(subName, top.id);
+                      setSubName('');
+                      setSubFor(null);
+                    }}
+                  >
+                    <input className="field grow" aria-label={`${top.name}의 하위 활동 이름`} placeholder={`${top.name} › 하위 이름`} maxLength={20} autoFocus value={subName} onChange={(e) => setSubName(e.target.value)} />
+                    <button className="pill ink" type="submit">
+                      추가
+                    </button>
+                  </form>
+                )}
               </div>
             ))}
           <form
@@ -84,7 +138,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
               setName('');
             }}
           >
-            <input className="field grow" aria-label="새 활동 이름" placeholder="새 활동 이름" maxLength={20} value={name} onChange={(e) => setName(e.target.value)} />
+            <input className="field grow" aria-label="새 대주제 이름" placeholder="새 대주제 이름" maxLength={20} value={name} onChange={(e) => setName(e.target.value)} />
             <button className="pill ink" type="submit">
               추가
             </button>

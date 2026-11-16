@@ -7,7 +7,7 @@ import { useStore } from '../store';
 
 interface Props {
   day: number;
-  mode: 'view' | PaintMode;
+  mode: PaintMode;
   activityId: string;
   now: number;
 }
@@ -24,7 +24,15 @@ export function Grid({ day, mode, activityId, now }: Props) {
   const activities = useStore((s) => s.activities);
   const paint = useStore((s) => s.paint);
   const beginStroke = useStore((s) => s.beginStroke);
-  const drag = useRef<{ on: boolean; last: number }>({ on: false, last: -1 });
+  // 손가락이 닿은 뒤 가로로 움직이기 시작해야 칠한다. 세로로 움직이면 브라우저가 스크롤로 가져간다.
+  const drag = useRef<{ down: boolean; on: boolean; last: number; x: number; y: number; first: number }>({
+    down: false,
+    on: false,
+    last: -1,
+    x: 0,
+    y: 0,
+    first: -1,
+  });
   const nowRow = useRef<HTMLDivElement>(null);
   const isToday = day === dayStart(now);
   const minute = Math.floor(now / 60_000);
@@ -72,12 +80,20 @@ export function Grid({ day, mode, activityId, now }: Props) {
     const row = Math.max(0, Math.min(23, Math.floor(((e.clientY - r.top) / r.height) * 24)));
     return row * 6 + col;
   };
-  const stroke = (e: PointerEvent<HTMLDivElement>) => {
-    if (mode === 'view') return;
-    const i = cellAt(e);
+  const paintAt = (i: number) => {
     if (drag.current.last === i) return;
     drag.current.last = i;
     paint(day + i * CELL, mode, activityId);
+  };
+  const begin = (e: PointerEvent<HTMLDivElement>) => {
+    drag.current.on = true;
+    beginStroke();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* 일부 WebView에서는 실패해도 그리기는 된다 */
+    }
+    paintAt(drag.current.first);
   };
 
   const scrollHour = isToday ? Math.max(0, new Date(now).getHours() - 2) : 7;
@@ -92,28 +108,37 @@ export function Grid({ day, mode, activityId, now }: Props) {
         ))}
       </div>
       <div
-        className={mode === 'view' ? 'cells' : 'cells painting'}
+        className="cells"
         role="img"
         aria-label="하루 24시간 격자. 한 시간이 가로 6칸."
         onPointerDown={(e) => {
-          if (mode === 'view') return;
-          beginStroke();
-          drag.current = { on: true, last: -1 };
-          try {
-            e.currentTarget.setPointerCapture(e.pointerId);
-          } catch {
-            /* 일부 WebView에서는 실패해도 그리기는 된다 */
-          }
-          stroke(e);
+          drag.current = { down: true, on: false, last: -1, x: e.clientX, y: e.clientY, first: cellAt(e) };
+          // 마우스는 스크롤과 헷갈릴 일이 없으니 바로 칠한다.
+          if (e.pointerType === 'mouse') begin(e);
         }}
         onPointerMove={(e) => {
-          if (drag.current.on) stroke(e);
+          const d = drag.current;
+          if (!d.down) return;
+          if (!d.on) {
+            const dx = Math.abs(e.clientX - d.x);
+            const dy = Math.abs(e.clientY - d.y);
+            if (dx < 8 || dx < dy) return;
+            begin(e);
+          }
+          paintAt(cellAt(e));
         }}
         onPointerUp={() => {
-          drag.current.on = false;
+          const d = drag.current;
+          // 움직이지 않고 뗐으면 한 칸 톡 누른 것.
+          if (d.down && !d.on) {
+            beginStroke();
+            paintAt(d.first);
+          }
+          drag.current = { ...d, down: false, on: false };
         }}
         onPointerCancel={() => {
-          drag.current.on = false;
+          // 브라우저가 스크롤로 가져갔다: 아무것도 칠하지 않는다.
+          drag.current = { ...drag.current, down: false, on: false };
         }}
       >
         {cells.map((c, i) => (

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { intentProgress, mentionIntent } from './intents';
+import { findGap } from './gaps';
 import { cellInfo, mergeAdd, paintCell, subtract, totalsByActivity, unionMs } from './intervals';
-import { DEFAULT_ACTIVITIES } from './palette';
+import { childColor, DEFAULT_ACTIVITIES, rootOf } from './palette';
 import { parse } from './parser';
 import { recordPlanEdit } from './plans';
 import { CELL, dayStart, HOUR, MIN } from './time';
@@ -160,25 +160,55 @@ describe('명령 반영', () => {
   });
 });
 
-describe('의도와 착수', () => {
-  it('처음 말한 날, 첫 시도, 본격 시작을 따로 계산한다', () => {
-    let intents = mentionIntent([], '논문', 'paper', at(0) - 15 * 24 * HOUR);
-    intents = mentionIntent(intents, '논문', 'paper', at(0) - 11 * 24 * HOUR);
-    expect(intents).toHaveLength(1);
-    expect(intents[0].mentions).toHaveLength(2);
-    let list: Interval[] = [];
-    list = mergeAdd(list, { activityId: 'paper', kind: 'exec', start: at(9), end: at(9, 10), source: 'timer' });
-    list = mergeAdd(list, { activityId: 'paper', kind: 'exec', start: at(14), end: at(15), source: 'timer' });
-    const p = intentProgress(intents[0], list, now);
-    expect(p.firstAttemptAt).toBe(at(9));
-    expect(p.meaningfulAt).toBe(at(14, 20));
+describe('대주제와 하위 활동', () => {
+  it('"해야지"는 타이머를 켜지 않고 메모로만 남는다', () => {
+    const d = emptyData();
+    applyCommand(d, { type: 'intent', label: '논문', activityId: 'paper' }, at(9));
+    expect(d.intervals).toHaveLength(0);
+    expect(d.notes).toHaveLength(1);
   });
 
-  it('실행 기록이 없으면 실패가 아니라 null', () => {
-    const [it0] = mentionIntent([], '장보기', null, at(8));
-    const p = intentProgress(it0, [], now);
-    expect(p.firstAttemptAt).toBeNull();
-    expect(p.meaningfulAt).toBeNull();
+  it('하위 활동 이름으로 말하면 그 하위 활동이 시작된다', () => {
+    const acts2 = [...acts, { id: 'sl', name: 'Starlink', color: childColor('#A6D2FF', 0), parentId: 'paper' }];
+    expect(parse('Starlink 시작', acts2, now)).toEqual([{ type: 'start', name: 'Starlink', activityId: 'sl' }]);
+    expect(rootOf(acts2, 'sl')).toBe('paper');
+    expect(rootOf(acts2, 'paper')).toBe('paper');
+  });
+
+  it('하위 색은 대주제와 다르고 형제끼리도 다르다', () => {
+    const a = childColor('#A6D2FF', 0);
+    const b = childColor('#A6D2FF', 1);
+    expect(a).toMatch(/^#[0-9a-f]{6}$/);
+    expect(new Set(['#a6d2ff', a, b]).size).toBe(3);
+  });
+});
+
+describe('빈칸 찾기', () => {
+  const add = (list: Interval[], id: string, s: number, e: number) =>
+    mergeAdd(list, { activityId: id, kind: 'exec', start: s, end: e, source: 'timer' });
+
+  it('기록이 없는 날은 묻지 않는다', () => {
+    expect(findGap([], at(15))).toBeNull();
+  });
+
+  it('기록 사이의 빈 시간 중 가장 최근 것을 고른다', () => {
+    let list: Interval[] = [];
+    list = add(list, 'class', at(9), at(10));
+    list = add(list, 'hw', at(11), at(12));
+    list = add(list, 'job', at(13, 30), at(14));
+    expect(findGap(list, at(14, 5))).toEqual({ start: at(12), end: at(13, 30) });
+  });
+
+  it('마지막 기록 뒤로 한참 비었으면 방금 10분은 빼고 묻는다', () => {
+    const list = add([], 'class', at(9), at(10));
+    expect(findGap(list, at(12))).toEqual({ start: at(10), end: at(11, 50) });
+  });
+
+  it('20분보다 짧은 틈과 진행 중인 일은 빈칸이 아니다', () => {
+    let list = add([], 'class', at(9), at(10));
+    list = add(list, 'hw', at(10, 15), at(11));
+    list = [...list, { id: 'x', activityId: 'paper', kind: 'exec', start: at(11), end: null, source: 'timer' }];
+    expect(findGap(list, at(13))).toBeNull();
   });
 });
 

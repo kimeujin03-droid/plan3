@@ -5,6 +5,8 @@ export interface Activity {
   id: string;
   name: string;
   color: string;
+  /** 있으면 그 대주제 아래의 하위 활동. 한 단계만 둔다. */
+  parentId?: string;
 }
 
 /** 실제 시각(ms)으로 저장하는 구간. end가 null이면 지금도 진행 중. */
@@ -33,13 +35,6 @@ export interface RawEntry {
   reply: string;
 }
 
-export interface Intent {
-  id: string;
-  label: string;
-  activityId: string | null;
-  mentions: number[];
-}
-
 export interface Note {
   id: string;
   at: number;
@@ -64,7 +59,6 @@ export interface Data {
   intervals: Interval[];
   samples: Sample[];
   raw: RawEntry[];
-  intents: Intent[];
   notes: Note[];
   planVersions: PlanVersion[];
   sleeping: boolean;

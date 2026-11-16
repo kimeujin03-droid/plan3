@@ -1,24 +1,23 @@
 import { Capacitor } from '@capacitor/core';
 import { Component, useEffect, useRef, useState, type ReactNode } from 'react';
-import { InputBar, useNow } from './components/common';
+import { InputBar, RunningBar, Toast, useNow } from './components/common';
 import { Moa } from './components/Moa';
 import { activeIntervals } from './lib/intervals';
 import { flushStorage } from './lib/storage';
-import { Archive } from './screens/Archive';
 import { Clock } from './screens/Clock';
 import { Home } from './screens/Home';
 import { Review } from './screens/Review';
 import { Settings } from './screens/Settings';
-import { Today, type TodayMode } from './screens/Today';
+import { Today } from './screens/Today';
 import { useStore } from './store';
 
-type Tab = 'home' | 'today' | 'archive' | 'review';
-type Overlay = 'clock' | 'settings' | null;
+type Tab = 'home' | 'today' | 'clock' | 'review';
+type Overlay = 'settings' | null;
 
 const TABS: { id: Tab; name: string }[] = [
   { id: 'home', name: '모아' },
   { id: 'today', name: '오늘' },
-  { id: 'archive', name: '기록함' },
+  { id: 'clock', name: '시계' },
   { id: 'review', name: '돌아보기' },
 ];
 
@@ -61,7 +60,6 @@ function useHydrated(): boolean {
 function Shell() {
   const [tab, setTab] = useState<Tab>('home');
   const [overlay, setOverlay] = useState<Overlay>(null);
-  const [todayMode, setTodayMode] = useState<TodayMode>('view');
   const running = useStore((s) => activeIntervals(s.intervals).length > 0);
   const now = useNow(running ? 1000 : 20_000);
 
@@ -96,31 +94,25 @@ function Shell() {
 
   return (
     <div className="app">
-      {tab === 'home' && (
-        <Home
-          now={now}
-          onOpenToday={(plan) => {
-            setTodayMode(plan ? 'plan' : 'view');
-            setTab('today');
-          }}
-          onOpenClock={() => setOverlay('clock')}
-          onOpenSettings={() => setOverlay('settings')}
-        />
-      )}
-      {tab === 'today' && <Today now={now} mode={todayMode} setMode={setTodayMode} onOpenClock={() => setOverlay('clock')} />}
-      {tab === 'archive' && <Archive now={now} />}
+      {tab === 'home' && <Home now={now} onOpenSettings={() => setOverlay('settings')} />}
+      {tab === 'today' && <Today now={now} />}
+      {tab === 'clock' && <Clock now={now} />}
       {tab === 'review' && <Review now={now} />}
 
-      <InputBar />
-      <nav className="nav" aria-label="화면">
-        {TABS.map((t) => (
-          <button key={t.id} aria-current={tab === t.id ? 'page' : undefined} onClick={() => setTab(t.id)}>
-            {t.name}
-          </button>
-        ))}
-      </nav>
+      <div className="dock">
+        <Toast />
+        {/* 첫 화면과 시계는 돌고 있는 타이머를 이미 크게 보여주므로 알약은 숨긴다. */}
+        {tab !== 'clock' && <RunningBar now={now} onOpen={() => setTab('clock')} pills={tab !== 'home'} />}
+        <InputBar />
+        <nav className="nav" aria-label="화면">
+          {TABS.map((t) => (
+            <button key={t.id} aria-current={tab === t.id ? 'page' : undefined} onClick={() => setTab(t.id)}>
+              {t.name}
+            </button>
+          ))}
+        </nav>
+      </div>
 
-      {overlay === 'clock' && <Clock now={now} onClose={() => setOverlay(null)} />}
       {overlay === 'settings' && <Settings onClose={() => setOverlay(null)} />}
     </div>
   );
