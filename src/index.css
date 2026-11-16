@@ -431,83 +431,82 @@ button {
   }
 }
 
-/* 하루 타임라인: 시간이 아래로 흐르고 한 줄이 10분 */
-.tl {
-  position: relative;
-  flex: none;
+/* 오늘 격자 */
+.daygrid {
+  display: flex;
+  gap: 6px;
 }
 
-.tl-hours {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 28px;
+.hours {
+  flex: none;
+  width: 24px;
+  display: grid;
+  grid-auto-rows: var(--row);
   font-size: 12px;
-  line-height: 14px;
   color: var(--sub);
 }
 
-.tl-canvas {
-  position: absolute;
-  left: 30px;
-  right: 0;
-  top: 0;
-  bottom: 0;
+.cells {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-auto-rows: var(--row);
+  background: var(--card);
   border-radius: 16px;
   overflow: hidden;
-  /* 굵은 줄은 한 시간, 옅은 줄은 10분 */
-  background:
-    repeating-linear-gradient(to bottom, var(--line) 0 1px, transparent 1px 84px),
-    repeating-linear-gradient(to bottom, #f1f2f7 0 1px, transparent 1px 14px),
-    var(--card);
   user-select: none;
   -webkit-user-select: none;
-  -webkit-touch-callout: none;
-  /* 세로로 밀면 스크롤. 꾹 누른 뒤에는 칠하기로 바뀐다. */
+  /* 세로로 밀면 스크롤, 가로로 문지르면 칠하기 */
   touch-action: pan-y;
+  cursor: crosshair;
 }
 
-.tl-canvas > i {
+
+
+.cell {
+  position: relative;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.cell > i {
   position: absolute;
+  left: 0;
+  right: -1px;
   display: block;
-  pointer-events: none;
 }
 
-.tl-canvas > i.plan {
-  box-shadow: inset 3px 0 0 rgba(38, 35, 58, 0.22);
-  border-radius: 0 !important;
+.cell .plan {
+  top: 0;
+  bottom: 0;
+  right: 0;
 }
 
-.tl-canvas > i.e1,
-.tl-canvas > i.e2 {
-  opacity: 0.92;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.7);
+.cell .e1,
+.cell .e2 {
+  opacity: 0.88;
 }
 
-.tl-canvas > span {
+.cell .e2 {
+  bottom: 0;
+  height: 30%;
+}
+
+.cell span {
   position: absolute;
+  left: 6px;
+  white-space: nowrap;
   z-index: 1;
   pointer-events: none;
-  white-space: nowrap;
   font-size: 12px;
-  line-height: 14px;
 }
 
-.tl-canvas > span.muted {
-  color: #5b5680;
-}
-
-.tl-canvas > span.memo {
-  right: 4px;
-  z-index: 3;
-  font-size: 11px;
-  padding: 0 6px;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 0 0 1px var(--line);
-  max-width: 60%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.cell span.l2 {
+  bottom: 0;
+  font-size: 10px;
+  line-height: 13px;
 }
 
 .nowline {
@@ -947,6 +946,20 @@ a.link {
   min-height: 100%;
 }
 
+/* 칸 메모 */
+.cell span.memo {
+  top: auto;
+  bottom: 1px;
+  left: 3px;
+  z-index: 3;
+  font-size: 11px;
+  line-height: 14px;
+  padding: 0 5px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 0 0 1px var(--line);
+}
+
 /* 주간 보기 */
 .weekgrid {
   display: flex;
@@ -1279,4 +1292,8 @@ a.link {
 .hint {
   font-size: 12px;
   color: var(--sub);
+}
+
+.cells {
+  -webkit-touch-callout: none;
 }
