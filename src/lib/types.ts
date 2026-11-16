@@ -69,6 +69,10 @@ export interface Data {
   planVersions: PlanVersion[];
   sleeping: boolean;
   nudge: boolean;
+  /** 못 알아들은 말을 AI 서버에 보내도 된다고 사용자가 켠 경우에만 true */
+  ai: boolean;
+  /** 직접 운영하는 서버 주소. 비어 있으면 빌드에 들어간 기본 주소를 쓴다. */
+  apiOverride: string;
 }
 
 export type PaintMode = 'plan' | 'exec' | 'erase';

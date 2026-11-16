@@ -46,8 +46,8 @@ button {
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
 }
 
 .screen {
@@ -61,10 +61,10 @@ button {
 }
 
 .today-top {
-  padding: 20px 20px 8px;
+  padding: 12px 20px 6px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .row {
@@ -506,8 +506,8 @@ button {
 .overlay > .screen {
   max-width: 520px;
   width: 100%;
-  padding-top: calc(20px + env(safe-area-inset-top));
-  padding-bottom: calc(20px + env(safe-area-inset-bottom));
+  padding-top: calc(20px + var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));
+  padding-bottom: calc(20px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
 }
 
 .ring {
@@ -701,4 +701,59 @@ textarea.field {
   color: var(--sub);
   font-size: 14px;
   padding: 24px 8px;
+}
+
+.boot {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px;
+  text-align: center;
+}
+
+.switch {
+  flex: none;
+  width: 56px;
+  height: 32px;
+  border-radius: 16px;
+  background: #c9cde0;
+  position: relative;
+  transition: background 0.15s;
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 12px;
+  background: #fff;
+  transition: transform 0.15s;
+}
+
+.switch[aria-checked='true'] {
+  background: var(--ink);
+}
+
+.switch[aria-checked='true']::after {
+  transform: translateX(24px);
+}
+
+.tap {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
+a.link {
+  color: var(--ink);
+  text-decoration: underline;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
 }

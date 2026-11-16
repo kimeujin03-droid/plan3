@@ -1,9 +1,11 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
+import { aiParse, DEFAULT_API } from './lib/ai';
 import { uid } from './lib/id';
 import { mentionIntent } from './lib/intents';
 import { activeIntervals, mergeAdd, paintCell } from './lib/intervals';
 import { rescheduleNudge } from './lib/notify';
+import { moaStorage } from './lib/storage';
 import { DEFAULT_ACTIVITIES, EXTRA_COLORS, SLEEP_ID } from './lib/palette';
 import { parse, type Command } from './lib/parser';
 import { recordPlanEdit } from './lib/plans';
@@ -18,6 +20,8 @@ export interface Reply {
 interface Store extends Data {
   undoData: Data | null;
   lastReply: Reply | null;
+  /** AI 대답을 기다리는 중 */
+  thinking: boolean;
   say: (text: string) => void;
   undo: () => void;
   beginStroke: () => void;
@@ -28,6 +32,8 @@ interface Store extends Data {
   addActivity: (name: string) => void;
   renameActivity: (id: string, name: string) => void;
   setNudge: (on: boolean) => void;
+  setAi: (on: boolean) => void;
+  setApiOverride: (url: string) => void;
   importData: (json: string) => boolean;
   wipe: () => void;
 }
@@ -42,6 +48,8 @@ export const emptyData = (): Data => ({
   planVersions: [],
   sleeping: false,
   nudge: false,
+  ai: false,
+  apiOverride: '',
 });
 
 export function pickData(s: Data): Data {
@@ -55,6 +63,8 @@ export function pickData(s: Data): Data {
     planVersions: s.planVersions,
     sleeping: s.sleeping,
     nudge: s.nudge,
+    ai: s.ai,
+    apiOverride: s.apiOverride,
   };
 }
 
@@ -159,6 +169,8 @@ export function applyCommand(d: Data, cmd: Command, now: number): string {
       d.notes = [...d.notes, { id: uid('note'), at: now, kind: 'memo', text: cmd.text }];
       return '메모로 적어뒀어.';
     }
+    case 'chat':
+      return cmd.text;
   }
 }
 
@@ -168,20 +180,49 @@ export const useStore = create<Store>()(
       ...emptyData(),
       undoData: null,
       lastReply: null,
+      thinking: false,
 
       say: (text) => {
+        const trimmed = text.trim();
+        if (!trimmed) return;
         const now = Date.now();
-        const before = pickData(get());
-        const d: Data = { ...before };
-        const cmds = parse(text, d.activities, now);
-        if (!cmds.length) return;
-        const reply = cmds.map((c) => applyCommand(d, c, now)).join(' ');
-        d.raw = [
-          ...d.raw,
-          { id: uid('raw'), at: now, text: text.trim(), action: cmds.map((c) => c.type).join('+'), reply },
-        ];
-        set({ ...d, undoData: before, lastReply: { text: reply, at: now } });
-        rescheduleNudge(d.nudge && !d.sleeping);
+        const s0 = get();
+        const before = pickData(s0);
+        const rawId = uid('raw');
+        const ruleCmds = parse(trimmed, s0.activities, now);
+        if (!ruleCmds.length) return;
+
+        // 명령을 반영하고 원문 기록의 결과 칸을 채운다. 시각은 말한 순간(now)을 쓴다.
+        const finish = (cmds: Command[], via: 'rule' | 'ai') => {
+          const cur = pickData(get());
+          const d: Data = { ...cur };
+          const reply = cmds.map((c) => applyCommand(d, c, now)).join(' ');
+          const action = `${via}:${cmds.map((c) => c.type).join('+')}`;
+          d.raw = d.raw.some((r) => r.id === rawId)
+            ? d.raw.map((r) => (r.id === rawId ? { ...r, action, reply } : r))
+            : [...d.raw, { id: rawId, at: now, text: trimmed, action, reply }];
+          set({ ...d, undoData: before, lastReply: { text: reply, at: Date.now() }, thinking: false });
+          void rescheduleNudge(d.nudge && !d.sleeping);
+        };
+
+        const api = s0.apiOverride || DEFAULT_API;
+        const notUnderstood = ruleCmds.length === 1 && ruleCmds[0].type === 'memo';
+        const online = typeof navigator === 'undefined' || navigator.onLine !== false;
+        if (notUnderstood && s0.ai && api && online) {
+          // 원문은 바로 저장하고, 해석만 서버를 기다린다. 서버가 실패하면 메모로 남는다.
+          set({
+            raw: [...s0.raw, { id: rawId, at: now, text: trimmed, action: 'pending', reply: '' }],
+            lastReply: { text: '잠깐만, 알아듣는 중…', at: now },
+            undoData: null,
+            thinking: true,
+          });
+          const running = activeIntervals(s0.intervals).map((iv) => nameOf(s0, iv.activityId));
+          void aiParse(api, trimmed, s0.activities, running, now).then((aiCmds) =>
+            aiCmds ? finish(aiCmds, 'ai') : finish(ruleCmds, 'rule'),
+          );
+          return;
+        }
+        finish(ruleCmds, 'rule');
       },
 
       undo: () => {
@@ -196,6 +237,12 @@ export const useStore = create<Store>()(
       paint: (cellStart, mode, activityId) => {
         const now = Date.now();
         const s = get();
+        if (mode === 'exec' && cellStart > now) {
+          // 아직 오지 않은 시간에 '했다'를 적으면 통계가 틀어진다. 계획으로만 칠하게 한다.
+          const text = '아직 안 온 시간은 계획으로만 칠할 수 있어.';
+          if (s.lastReply?.text !== text || now - s.lastReply.at > 4000) set({ lastReply: { text, at: now } });
+          return;
+        }
         const intervals = paintCell(s.intervals, cellStart, activityId, mode, now);
         if (intervals === s.intervals) return;
         const planVersions =
@@ -246,21 +293,55 @@ export const useStore = create<Store>()(
         rescheduleNudge(on && !get().sleeping);
       },
 
+      setAi: (on) => set({ ai: on }),
+
+      setApiOverride: (url) => set({ apiOverride: url.trim().replace(/\/+$/, '') }),
+
       importData: (json) => {
         try {
           const p = JSON.parse(json) as Partial<Data>;
-          if (!Array.isArray(p.activities) || !Array.isArray(p.intervals)) return false;
-          set({ ...emptyData(), ...p, undoData: pickData(get()) });
+          const arr = (v: unknown) => (Array.isArray(v) ? v : []);
+          const activities = arr(p.activities).filter(
+            (a) => a && typeof a.id === 'string' && typeof a.name === 'string' && /^#[0-9a-fA-F]{6}$/.test(a.color),
+          );
+          if (!activities.length) return false;
+          const known = new Set(activities.map((a) => a.id));
+          const intervals = arr(p.intervals).filter(
+            (iv) =>
+              iv &&
+              known.has(iv.activityId) &&
+              (iv.kind === 'plan' || iv.kind === 'exec') &&
+              Number.isFinite(iv.start) &&
+              (iv.end === null || (Number.isFinite(iv.end) && iv.end > iv.start)),
+          );
+          // 가져온 파일의 서버 주소와 AI 동의는 믿지 않는다: 이 기기에서 정한 값을 유지한다.
+          const cur = get();
+          set({
+            ...emptyData(),
+            activities,
+            intervals,
+            samples: arr(p.samples).filter((m) => m && Number.isFinite(m.at) && Number.isFinite(m.value)),
+            raw: arr(p.raw).filter((r) => r && typeof r.text === 'string' && Number.isFinite(r.at)),
+            intents: arr(p.intents).filter((it) => it && typeof it.label === 'string' && Array.isArray(it.mentions) && it.mentions.length),
+            notes: arr(p.notes).filter((n) => n && typeof n.text === 'string' && Number.isFinite(n.at)),
+            planVersions: arr(p.planVersions).filter((v) => v && Number.isFinite(v.day) && Array.isArray(v.items)),
+            sleeping: intervals.some((iv) => iv.activityId === SLEEP_ID && iv.end === null),
+            nudge: cur.nudge,
+            ai: cur.ai,
+            apiOverride: cur.apiOverride,
+            undoData: pickData(cur),
+          });
           return true;
         } catch {
           return false;
         }
       },
 
-      wipe: () => set({ ...emptyData(), undoData: null, lastReply: null }),
+      wipe: () => set({ ...emptyData(), undoData: null, lastReply: null, thinking: false }),
     }),
     {
       name: 'moa-v1',
+      storage: createJSONStorage(() => moaStorage),
       partialize: (s) => pickData(s),
     },
   ),

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="moa_bg">#F2F4FA</color>
+    <color name="colorPrimary">#26233A</color>
+    <color name="colorPrimaryDark">#26233A</color>
+    <color name="colorAccent">#FFD45C</color>
+</resources>

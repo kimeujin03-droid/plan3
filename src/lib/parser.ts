@@ -12,7 +12,9 @@ export type Command =
   | { type: 'fatigue'; value: number }
   | { type: 'mood'; text: string }
   | { type: 'quiet' }
-  | { type: 'memo'; text: string };
+  | { type: 'memo'; text: string }
+  /** AI가 기록할 것 없이 짧게 대꾸만 할 때. 규칙 해석에서는 나오지 않는다. */
+  | { type: 'chat'; text: string };
 
 const FILLER = /^(모아야|모아|지금부터|이제부터|나|지금|이제|그럼|아까|오늘|방금)[\s,]*/;
 

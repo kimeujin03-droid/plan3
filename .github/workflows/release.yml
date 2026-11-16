@@ -1,0 +1,75 @@
+name: Release AAB
+
+# Play 스토어에 올릴 서명된 AAB를 만든다. Actions 탭에서 직접 실행한다.
+# 필요한 Secrets: MOA_KEYSTORE_BASE64, MOA_KEYSTORE_PASSWORD, MOA_KEY_ALIAS, MOA_KEY_PASSWORD
+# (만드는 법은 docs/release.md)
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      KEYSTORE_B64: ${{ secrets.MOA_KEYSTORE_BASE64 }}
+    steps:
+    - name: Check signing secrets
+      run: |
+        if [ -z "$KEYSTORE_B64" ]; then
+          echo "::error::서명 키가 없습니다. docs/release.md를 따라 Secrets를 먼저 등록하세요."
+          exit 1
+        fi
+
+    - uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run tests
+      run: npm test
+
+    - name: Build web app
+      run: npm run build:web
+      env:
+        VITE_MOA_API: ${{ vars.VITE_MOA_API }}
+
+    - name: Sync Capacitor
+      run: npx cap sync android
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+
+    - name: Restore keystore
+      run: echo "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/moa-release.jks"
+
+    - name: Build signed AAB
+      working-directory: android
+      run: chmod +x gradlew && ./gradlew bundleRelease
+      env:
+        # Play는 올릴 때마다 더 큰 버전 코드를 요구한다. 이 워크플로의 실행 번호를 그대로 쓴다.
+        MOA_VERSION_CODE: ${{ github.run_number }}
+        MOA_KEYSTORE_FILE: ${{ runner.temp }}/moa-release.jks
+        MOA_KEYSTORE_PASSWORD: ${{ secrets.MOA_KEYSTORE_PASSWORD }}
+        MOA_KEY_ALIAS: ${{ secrets.MOA_KEY_ALIAS }}
+        MOA_KEY_PASSWORD: ${{ secrets.MOA_KEY_PASSWORD }}
+
+    - name: Remove keystore
+      if: always()
+      run: rm -f "$RUNNER_TEMP/moa-release.jks"
+
+    - name: Upload AAB artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-release-aab
+        path: android/app/build/outputs/bundle/release/app-release.aab

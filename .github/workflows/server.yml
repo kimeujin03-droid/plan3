@@ -1,0 +1,38 @@
+name: Deploy API
+
+# server/ 의 Cloudflare Worker를 배포한다.
+# 필요한 Secrets: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, GEMINI_API_KEY (등록법은 docs/server.md)
+on:
+  push:
+    branches: [ "main", "moa" ]
+    paths: [ "server/**", ".github/workflows/server.yml" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Skip when Cloudflare is not connected yet
+      if: env.CF_TOKEN == ''
+      run: echo "::notice::CLOUDFLARE_API_TOKEN이 없어 배포를 건너뜁니다. docs/server.md를 따라 Secrets를 등록하세요."
+
+    - name: Deploy worker
+      if: env.CF_TOKEN != ''
+      uses: cloudflare/wrangler-action@v3
+      with:
+        apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        workingDirectory: server
+        wranglerVersion: "4.162.0"
+        command: deploy
+        secrets: |
+          GEMINI_API_KEY
+      env:
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}

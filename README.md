@@ -24,7 +24,7 @@
 
 ## 모아가 알아듣는 말
 
-AI 서버 없이 규칙으로 해석한다 (`src/lib/parser.ts`). 못 알아들은 말은 메모로 남고, 모든 말은 원문 그대로 쌓인다.
+먼저 규칙으로 해석한다 (`src/lib/parser.ts`). 규칙으로 못 알아들은 말은, 설정에서 **AI로 알아듣기**를 켠 경우에만 서버(`server/`, Cloudflare Workers + Gemini)에 물어본다. 서버가 없거나 실패하면 메모로 남는다. 모든 말은 원문 그대로 바로 저장된다.
 
 | 말 | 결과 |
 |---|---|
@@ -37,23 +37,41 @@ AI 서버 없이 규칙으로 해석한다 (`src/lib/parser.ts`). 못 알아들�
 | `집중도 4`, `피로도 80` | 점수 기록 |
 | `말 걸지 마` | 먼저 말 걸기 끄기 |
 
+## 폴더
+
+| 경로 | 내용 |
+|---|---|
+| `src/` | 앱 (React). `lib/`가 기록 로직, `screens/`가 화면 |
+| `server/` | AI 해석 서버 (Cloudflare Worker) |
+| `android/` | Android 프로젝트 (Capacitor 8, 대상 API 36) |
+| `assets/` | 아이콘·스플래시 원본 |
+| `docs/` | 서버 연결, 출시 준비, 개인정보 처리방침, 스토어 문구 |
+| `legacy/` | 예전 Life Log Planner 코드 |
+
 ## 개발
+
+Node 22 이상이 필요하다.
 
 ```bash
 npm install
 npm run dev      # 브라우저에서 확인
-npm test         # 기록 로직 테스트
+npm test         # 기록 로직, AI 응답 처리, 서버 테스트
 npm run build    # 타입 검사 + 빌드
 ```
 
-## APK 받기
+## 빌드와 배포
 
-`moa` 또는 `main` 브랜치에 푸시하면 GitHub Actions(`Android CI`)가 디버그 APK를 만든다. 저장소의 Actions 탭 → 최근 실행 → Artifacts의 `app-debug-apk`를 내려받아 설치한다. 자세한 순서는 `GITHUB_APK_BUILD.md`.
+| 무엇 | 어떻게 |
+|---|---|
+| 설치해 볼 APK | `moa`/`main`에 푸시 → Actions의 **Android CI** → Artifacts `app-debug-apk` |
+| 스토어용 AAB | Actions의 **Release AAB** 직접 실행 (`docs/release.md`) |
+| AI 서버 | Actions의 **Deploy API** (`docs/server.md`) |
 
-앱 ID는 `com.yujin.moa`라서 예전 앱과 따로 설치된다.
+디버그 APK는 저장소의 고정 키(`android/debug.keystore`)로 서명해서 새 빌드를 덮어 설치할 수 있다. 이 키는 시험용이며 비밀이 아니다. 스토어용 키는 저장소에 두지 않는다.
 
 ## 아직 없는 것
 
-- 기록은 이 기기 안(localStorage)에만 저장된다. 백업은 설정의 내보내기로 직접 한다.
-- GPS, 영수증·가계부, 사진, 키링 연동은 없다.
-- "먼저 말 걸기" 알림은 실제 기기에서 확인하지 못했다.
+- 기기 간 동기화와 클라우드 백업 (수동 내보내기와 Android 자동 백업만 있다)
+- GPS, 영수증·가계부, 사진, 키링 연동
+- 일본어, 어두운 테마
+- 실제 기기에서의 확인 목록은 `docs/release.md`에 있다

@@ -1,49 +1,55 @@
 name: Android CI
 
+# 푸시할 때마다 테스트를 돌리고 설치해 볼 수 있는 디버그 APK를 만든다.
 on:
   push:
     branches: [ "main", "moa" ]
+    paths-ignore: [ "server/**", "docs/**", "**.md" ]
   pull_request:
     branches: [ "main", "moa" ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v4
 
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: '22'
         cache: 'npm'
 
     - name: Install dependencies
       run: npm ci
 
+    - name: Run tests
+      run: npm test
+
     - name: Build web app
       run: npm run build:web
-
-    - name: Add Android platform
-      run: npx cap add android
+      env:
+        # 저장소 Settings → Variables에 넣은 AI 서버 주소. 없으면 AI 해석 없이 빌드된다.
+        VITE_MOA_API: ${{ vars.VITE_MOA_API }}
 
     - name: Sync Capacitor
       run: npx cap sync android
 
-    - name: Set up JDK 17
+    - name: Set up JDK 21
       uses: actions/setup-java@v4
       with:
-        java-version: '17'
+        java-version: '21'
         distribution: 'temurin'
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x android/gradlew
-
     - name: Build debug APK
-      run: cd android && ./gradlew assembleDebug
+      working-directory: android
+      run: chmod +x gradlew && ./gradlew assembleDebug
+      env:
+        MOA_VERSION_CODE: ${{ github.run_number }}
 
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4

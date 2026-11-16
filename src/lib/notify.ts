@@ -37,7 +37,7 @@ export async function rescheduleNudge(enabled: boolean): Promise<void> {
           id: NUDGE_ID,
           title: '모아',
           body: '지난 몇 시간 뭐 했어? 나중에 한꺼번에 알려줘도 돼.',
-          schedule: { at: new Date(Date.now() + NUDGE_AFTER_MS), allowWhileIdle: true },
+          schedule: { at: new Date(Date.now() + NUDGE_AFTER_MS), allowWhileIdle: false },
         },
       ],
     });

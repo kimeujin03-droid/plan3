@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">MOA</string>
+    <string name="title_activity_main">MOA</string>
+    <string name="package_name">com.yujin.moa</string>
+    <string name="custom_url_scheme">com.yujin.moa</string>
+</resources>

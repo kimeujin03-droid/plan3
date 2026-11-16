@@ -45,16 +45,17 @@ export function InputBar({ placeholder = '모아야, 나 지금…' }: { placeho
   );
 }
 
-/** 모아의 마지막 대답과 되돌리기. 5분이 지나면 숨긴다. */
-export function LastReply({ now }: { now: number }) {
+/** 모아의 마지막 대답과 되돌리기. ttlMs가 지나면 숨긴다. */
+export function LastReply({ now, ttlMs = 5 * 60_000 }: { now: number; ttlMs?: number }) {
   const reply = useStore((s) => s.lastReply);
+  const thinking = useStore((s) => s.thinking);
   const canUndo = useStore((s) => s.undoData !== null);
   const undo = useStore((s) => s.undo);
-  if (!reply || now - reply.at > 5 * 60_000) return null;
+  if (!reply || (!thinking && now - reply.at > ttlMs)) return null;
   return (
     <div className="row" aria-live="polite">
       <div className="reply grow">{reply.text}</div>
-      {canUndo && (
+      {canUndo && !thinking && (
         <button className="pill clear" onClick={undo}>
           되돌리기
         </button>

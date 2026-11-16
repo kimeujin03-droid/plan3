@@ -72,14 +72,15 @@ export function Today({ now, mode, setMode, onOpenClock }: Props) {
         </div>
       )}
 
-      <div className="sub">
-        {mode === 'view' && '보기에서는 화면이 스크롤돼. 칠하려면 계획이나 실행을 골라줘.'}
-        {mode === 'plan' && '문지르면 칸 전체가 연하게 칠해져. 스크롤은 왼쪽 시간 줄을 잡고.'}
-        {mode === 'exec' && '한 칸에 2개까지. 둘째는 아래 30%에 들어가.'}
-        {mode === 'erase' && '문지른 칸의 계획과 실행을 지워.'}
-      </div>
+      {mode !== 'view' && (
+        <div className="sub">
+          {mode === 'plan' && '문지르면 칸 전체가 연하게 칠해져. 스크롤은 왼쪽 시간 줄을 잡고.'}
+          {mode === 'exec' && '한 칸에 2개까지, 둘째는 아래 30%. 지금까지의 시간만 칠해져.'}
+          {mode === 'erase' && '문지른 칸의 계획과 실행을 지워.'}
+        </div>
+      )}
 
-      <LastReply now={now} />
+      <LastReply now={now} ttlMs={12_000} />
 
       {active.length > 0 && (
         <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>

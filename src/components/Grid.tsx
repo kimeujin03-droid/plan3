@@ -125,14 +125,15 @@ export function Grid({ day, mode, activityId, now }: Props) {
                 style={{
                   background: c.e1Bg,
                   borderRadius: c.e1R,
-                  top: c.two ? '0%' : '10%',
-                  height: c.two ? '68%' : '80%',
+                  // 위쪽 선은 늘 같은 자리에 두고, 둘째 일이 있을 때만 아래를 비워 준다.
+                  top: '8%',
+                  height: c.two ? '58%' : '80%',
                 }}
               />
             )}
             {c.e2Bg && <i className="e2" style={{ background: c.e2Bg, borderRadius: c.e2R }} />}
             {c.label && (
-              <span style={{ top: c.two ? 5 : 13, color: c.muted ? '#5b5680' : undefined }}>{c.label}</span>
+              <span style={{ top: c.two ? 7 : 12, color: c.muted ? '#5b5680' : undefined }}>{c.label}</span>
             )}
             {c.label2 && <span className="l2">{c.label2}</span>}
           </div>
