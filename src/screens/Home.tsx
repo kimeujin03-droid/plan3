@@ -5,12 +5,14 @@ import { useMoaMood } from '../components/useMoaMood';
 import { findGap } from '../lib/gaps';
 import { activeIntervals } from '../lib/intervals';
 import { SLEEP_ID } from '../lib/palette';
-import { fmtDate, fmtDur, fmtHM } from '../lib/time';
+import { dayStart, fmtDate, fmtDur, fmtHM } from '../lib/time';
 import { useStore } from '../store';
+import { TodoRow } from './Todos';
 
 interface Props {
   now: number;
   onOpenSettings: () => void;
+  onOpenTodos: () => void;
 }
 
 /** 비어 있는 시간을 한 번의 탭으로 채우는 카드. "몰라"를 누르면 그 빈칸은 다시 묻지 않는다. */
@@ -47,6 +49,29 @@ function GapCard({ now }: { now: number }) {
   );
 }
 
+/** 오늘까지인 할 일을 세 개까지만. 눈앞에 있어야 잊지 않는다. */
+function TodayTodos({ now, onOpen }: { now: number; onOpen: () => void }) {
+  const todos = useStore((s) => s.todos);
+  const today = dayStart(now);
+  const due = todos.filter((t) => !t.done && t.due !== null && t.due <= today).sort((a, b) => (a.due ?? 0) - (b.due ?? 0));
+  if (!due.length) return null;
+  return (
+    <div className="card" style={{ gap: 2, padding: '12px 8px 8px 16px' }}>
+      <div className="row between" style={{ paddingRight: 8 }}>
+        <div className="h2" style={{ fontSize: 15 }}>
+          오늘 할 일 · {due.length}개 남음
+        </div>
+        <button className="pill clear" style={{ minHeight: 32, padding: 0 }} onClick={onOpen}>
+          전체 보기
+        </button>
+      </div>
+      {due.slice(0, 3).map((t) => (
+        <TodoRow key={t.id} todo={t} now={now} />
+      ))}
+    </div>
+  );
+}
+
 const HELLO: Record<string, [string, string]> = {
   sleep: ['수면 기록 중', '일어나면 눌러줘'],
   focus: ['하는 중', '다시 누르면 끝'],
@@ -56,7 +81,7 @@ const HELLO: Record<string, [string, string]> = {
   idle: ['지금 뭐 해?', '누르면 바로 시작'],
 };
 
-export function Home({ now, onOpenSettings }: Props) {
+export function Home({ now, onOpenSettings, onOpenTodos }: Props) {
   const sleeping = useStore((s) => s.sleeping);
   const say = useStore((s) => s.say);
   const mood = useMoaMood(now);
@@ -109,6 +134,7 @@ export function Home({ now, onOpenSettings }: Props) {
       ) : (
         <>
           <StartGrid now={now} />
+          <TodayTodos now={now} onOpen={onOpenTodos} />
           <GapCard now={now} />
         </>
       )}

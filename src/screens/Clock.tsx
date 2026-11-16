@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Moa } from '../components/Moa';
+import { Moa, type MoaMood } from '../components/Moa';
 import { StartGrid } from '../components/Pickers';
 import { activeIntervals } from '../lib/intervals';
 import { FOCUS_SHADE, SLEEP_ID } from '../lib/palette';
@@ -8,7 +8,7 @@ import { useStore } from '../store';
 
 const UNRATED = '#D5D9E8';
 
-function Ring({ colors, digits, label }: { colors: string[]; digits: string; label: string }) {
+function Ring({ colors, digits, label, mood }: { colors: string[]; digits: string; label: string; mood: MoaMood }) {
   return (
     <div className="ring">
       <svg viewBox="0 0 320 320" fill="none" role="img" aria-label="이번 한 시간의 10분 칸 여섯 개">
@@ -17,6 +17,7 @@ function Ring({ colors, digits, label }: { colors: string[]; digits: string; lab
         ))}
       </svg>
       <div className="center">
+        <Moa size={56} mood={mood} />
         <div className="digits">{digits}</div>
         <div className="sub" style={{ fontSize: 14 }}>
           {label}
@@ -41,7 +42,7 @@ export function Clock({ now }: { now: number }) {
     return (
       <div className="screen" style={{ gap: 16 }}>
         <div className="title">시계</div>
-        <Ring colors={Array(6).fill('#FFFFFF')} digits="0:00:00" label={paused ? `${nameOf(paused)} 쉬는 중` : '멈춰 있어'} />
+        <Ring colors={Array(6).fill('#FFFFFF')} digits="0:00:00" label={paused ? `${nameOf(paused)} 쉬는 중` : '멈춰 있어'} mood={paused ? 'smile' : 'idle'} />
         {paused && (
           <button
             className="big-btn ink"
@@ -87,10 +88,9 @@ export function Clock({ now }: { now: number }) {
             {fmtHM(main.start)}부터
           </div>
         </div>
-        <Moa size={64} mood="focus" />
       </div>
 
-      <Ring colors={ring} digits={fmtClock(now - main.start)} label="하는 중" />
+      <Ring colors={ring} digits={fmtClock(now - main.start)} label="하는 중" mood="focus" />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <button

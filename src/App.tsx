@@ -1,6 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { Component, useEffect, useRef, useState, type ReactNode } from 'react';
 import { InputBar, RunningBar, Toast, useNow } from './components/common';
+import { Icon } from './components/Icons';
 import { Moa } from './components/Moa';
 import { activeIntervals } from './lib/intervals';
 import { flushStorage } from './lib/storage';
@@ -119,7 +120,7 @@ function Shell() {
 
   return (
     <div className="app">
-      {tab === 'home' && <Home now={now} onOpenSettings={() => setOverlay('settings')} />}
+      {tab === 'home' && <Home now={now} onOpenSettings={() => setOverlay('settings')} onOpenTodos={() => setTab('todos')} />}
       {tab === 'record' && <Record now={now} />}
       {tab === 'todos' && <Todos now={now} />}
       {tab === 'clock' && <Clock now={now} />}
@@ -132,6 +133,7 @@ function Shell() {
         <nav className="nav" aria-label="화면" hidden={typing}>
           {TABS.map((t) => (
             <button key={t.id} aria-current={tab === t.id ? 'page' : undefined} onClick={() => setTab(t.id)}>
+              <Icon name={t.id} />
               {t.name}
             </button>
           ))}

@@ -4,6 +4,7 @@ import { SLEEP_ID } from '../lib/palette';
 import { fmtClock } from '../lib/time';
 import type { Activity } from '../lib/types';
 import { useStore } from '../store';
+import { Icon } from './Icons';
 
 function Caret({ open }: { open: boolean }) {
   return (
@@ -51,6 +52,7 @@ export function StartGrid({ now }: { now: number }) {
         if (!kids.length) {
           return (
             <button key={top.id} className="start" style={{ background: top.color }} onClick={() => start(top.id)}>
+              <Icon name={top.id} />
               {top.name}
             </button>
           );
@@ -59,6 +61,7 @@ export function StartGrid({ now }: { now: number }) {
         return [
           <div key={top.id} className="start split" style={{ background: top.color }}>
             <button className="grow" onClick={() => { start(top.id); setOpen(null); }} aria-label={`${top.name} 시작`}>
+              <Icon name={top.id} />
               {top.name}
             </button>
             <button className="more" aria-expanded={isOpen} aria-label={`${top.name} 세부 항목`} onClick={() => setOpen(isOpen ? null : top.id)}>

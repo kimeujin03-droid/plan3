@@ -127,10 +127,11 @@ export function Record({ now }: { now: number }) {
             </div>
 
             {(mode === 'exec' || mode === 'plan') && <CategoryChips value={selected} onChange={setActId} />}
-            {mode === 'erase' && <div className="sub">문지른 칸의 기록과 계획이 지워져. 다시 누르면 꺼져.</div>}
+            {(mode === 'exec' || mode === 'plan') && <div className="hint">{view === 'day' ? '톡: 10분 칠하기 · 꾹 누르고 끌기: 길게 · 칠한 곳 톡: 자세히' : '문지르면 한 시간씩 칠해져'}</div>}
+            {mode === 'erase' && <div className="hint">{view === 'day' ? '톡 하거나 꾹 누르고 끌면 지워져.' : '문지르면 지워져.'} 지우개를 다시 누르면 꺼져.</div>}
             {mode === 'note' &&
               (noteAt === null ? (
-                <div className="sub">메모할 칸을 눌러줘.</div>
+                <div className="hint">메모할 시간을 눌러줘.</div>
               ) : (
                 <NoteEditor key={noteAt} at={noteAt} onDone={() => setNoteAt(null)} />
               ))}
