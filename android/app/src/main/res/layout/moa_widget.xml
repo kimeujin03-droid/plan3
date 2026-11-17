@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 바탕화면 위젯: 왼쪽에 모아(눈 표정·액세서리·보드), 오른쪽에 빠른 시작 버튼 4개 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:padding="8dp">
+
+    <FrameLayout
+        android:id="@+id/moa_frame"
+        android:layout_width="96dp"
+        android:layout_height="103dp"
+        android:contentDescription="@string/widget_open">
+
+        <ImageView android:id="@+id/moa_body" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/moa_body" android:importantForAccessibility="no" />
+        <ImageView android:id="@+id/moa_eyes" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/moa_eyes_idle" android:importantForAccessibility="no" />
+        <ImageView android:id="@+id/moa_acc" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:visibility="gone" android:importantForAccessibility="no" />
+        <ImageView android:id="@+id/moa_skate" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:src="@drawable/board_skate" android:visibility="gone" android:importantForAccessibility="no" />
+
+        <LinearLayout
+            android:id="@+id/moa_sign"
+            android:layout_width="58dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_marginBottom="2dp"
+            android:background="@drawable/widget_sign"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp">
+
+            <TextView android:id="@+id/sign_text" android:layout_width="wrap_content" android:layout_height="wrap_content" android:maxLines="1" android:ellipsize="end" android:text="모아" android:textColor="#26233A" android:textSize="11sp" android:textStyle="bold" />
+            <Chronometer android:id="@+id/sign_time" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#686580" android:textSize="10sp" android:visibility="gone" />
+        </LinearLayout>
+    </FrameLayout>
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView android:id="@+id/status" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginStart="4dp" android:layout_marginBottom="2dp" android:maxLines="1" android:ellipsize="end" android:text="뭐 할까? 눌러서 시작" android:textColor="#26233A" android:textSize="12sp" android:textStyle="bold" />
+
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+            <FrameLayout android:id="@+id/slot1" android:layout_width="0dp" android:layout_height="38dp" android:layout_margin="3dp" android:layout_weight="1">
+                <ImageView android:id="@+id/slot1_bg" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitXY" android:src="@drawable/widget_pill" android:importantForAccessibility="no" />
+                <TextView android:id="@+id/slot1_text" android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center" android:maxLines="1" android:ellipsize="end" android:textColor="#26233A" android:textSize="13sp" />
+            </FrameLayout>
+            <FrameLayout android:id="@+id/slot2" android:layout_width="0dp" android:layout_height="38dp" android:layout_margin="3dp" android:layout_weight="1">
+                <ImageView android:id="@+id/slot2_bg" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitXY" android:src="@drawable/widget_pill" android:importantForAccessibility="no" />
+                <TextView android:id="@+id/slot2_text" android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center" android:maxLines="1" android:ellipsize="end" android:textColor="#26233A" android:textSize="13sp" />
+            </FrameLayout>
+        </LinearLayout>
+
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+            <FrameLayout android:id="@+id/slot3" android:layout_width="0dp" android:layout_height="38dp" android:layout_margin="3dp" android:layout_weight="1">
+                <ImageView android:id="@+id/slot3_bg" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitXY" android:src="@drawable/widget_pill" android:importantForAccessibility="no" />
+                <TextView android:id="@+id/slot3_text" android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center" android:maxLines="1" android:ellipsize="end" android:textColor="#26233A" android:textSize="13sp" />
+            </FrameLayout>
+            <FrameLayout android:id="@+id/slot4" android:layout_width="0dp" android:layout_height="38dp" android:layout_margin="3dp" android:layout_weight="1">
+                <ImageView android:id="@+id/slot4_bg" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitXY" android:src="@drawable/widget_pill" android:importantForAccessibility="no" />
+                <TextView android:id="@+id/slot4_text" android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center" android:maxLines="1" android:ellipsize="end" android:textColor="#26233A" android:textSize="13sp" />
+            </FrameLayout>
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

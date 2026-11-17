@@ -4,6 +4,7 @@ import { InputBar, RunningBar, Toast, useNow } from './components/common';
 import { Icon } from './components/Icons';
 import { reschedulePlanAlerts } from './lib/notify';
 import { dailyBackup } from './lib/storage';
+import { drainWidget, syncWidget, widgetState } from './lib/widget';
 import { Moa } from './components/Moa';
 import { activeIntervals } from './lib/intervals';
 import { flushStorage } from './lib/storage';
@@ -80,6 +81,14 @@ function Shell() {
     return () => clearTimeout(t);
   }, [todos, intervals, activities, planAlertsOn, brief]);
 
+  // 위젯에 지금 상태와 꾸미기를 알려 준다.
+  const sleeping = useStore((s) => s.sleeping);
+  const look = useStore((s) => s.look);
+  useEffect(() => {
+    const t = setTimeout(() => void syncWidget(widgetState(intervals, activities, sleeping, look)), 300);
+    return () => clearTimeout(t);
+  }, [intervals, activities, sleeping, look]);
+
   // 하루가 바뀌면 반복 일정의 새 날을 채운다.
   const ensureSeries = useStore((s) => s.ensureSeries);
   const dayKey = new Date(now).toDateString();
@@ -131,9 +140,15 @@ function Shell() {
       const pause = await App.addListener('pause', () => {
         void flushStorage();
       });
+      // 다시 앞으로 오면 위젯에서 누른 것을 옮겨 온다.
+      const resume = await App.addListener('resume', () => {
+        void drainWidget().then((a) => useStore.getState().applyWidgetActions(a));
+      });
+      void drainWidget().then((a) => useStore.getState().applyWidgetActions(a));
       remove = () => {
         void back.remove();
         void pause.remove();
+        void resume.remove();
       };
       if (cancelled) remove();
     });

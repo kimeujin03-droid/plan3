@@ -96,6 +96,8 @@ interface Store extends Data {
   setPlanAlerts: (on: boolean) => void;
   setDailyBrief: (on: boolean) => void;
   setLook: (look: Partial<Look>) => void;
+  /** 위젯에서 누른 시작·끝을 누른 시각 그대로 옮긴다. */
+  applyWidgetActions: (actions: { op: 'start' | 'end'; id: string; at: number }[]) => void;
   /** 반복 일정을 만들고 앞으로 2주치를 바로 채운다. */
   addSeries: (s: Omit<Series, 'id' | 'skip' | 'createdAt'>) => void;
   /** 반복을 지운다: 앞으로의 안 한 일정과 그 계획 칠도 같이 지운다. */
@@ -624,6 +626,19 @@ export const useStore = create<Store>()(
       setDailyBrief: (on) => set({ dailyBrief: on }),
 
       setLook: (look) => set({ look: { ...get().look, ...look } }),
+
+      applyWidgetActions: (actions) => {
+        if (!actions.length) return;
+        const before = pickData(get());
+        const d: Data = { ...before };
+        const replies: string[] = [];
+        for (const a of [...actions].sort((x, y) => x.at - y.at)) {
+          if (!d.activities.some((x) => x.id === a.id)) continue;
+          replies.push(applyCommand(d, a.op === 'start' ? { type: 'start', name: nameOf(d, a.id), activityId: a.id } : { type: 'end', activityId: a.id }, a.at));
+        }
+        if (!replies.length) return;
+        set({ ...d, undoData: before, lastReply: { text: `위젯에서 누른 것 적었어: ${replies[replies.length - 1]}`, at: Date.now(), undo: true } });
+      },
 
       addSeries: (input) => {
         const now = Date.now();

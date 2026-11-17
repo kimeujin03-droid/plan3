@@ -20,6 +20,19 @@
             </intent-filter>
         </activity>
 
+        <!-- 바탕화면 위젯 -->
+        <receiver
+            android:name=".MoaWidget"
+            android:exported="false"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/moa_widget_info" />
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -33,5 +46,5 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- "먼저 말 걸기" 알림은 분 단위로 정확할 필요가 없다. 정확 알람 권한은 빼서 권한을 최소로 둔다. -->
+    <!-- 계획 알림을 정각에 울리려고 알림 플러그인이 정확 알람 권한(SCHEDULE_EXACT_ALARM)을 함께 넣는다. 사용자가 설정에서 허용해야 쓰인다. -->
 </manifest>

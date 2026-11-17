@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 생성됨: scripts/gen_widget_vectors.py. 모아 위젯 그림 한 겹. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="200dp" android:height="214dp" android:viewportWidth="200" android:viewportHeight="214">
+  <path android:pathData="M24,96 Q24,4 100,4 Q176,4 176,96" android:strokeColor="#6E64A8" android:strokeWidth="9" android:strokeLineCap="round" android:strokeLineJoin="round" />
+  <path android:pathData="M16,72 L18,72 A12,12 0 0 1 30,84 L30,106 A12,12 0 0 1 18,118 L16,118 A12,12 0 0 1 4,106 L4,84 A12,12 0 0 1 16,72 Z" android:fillColor="#FF8FA8" android:strokeColor="#6E64A8" android:strokeWidth="4" android:strokeLineCap="round" android:strokeLineJoin="round" />
+  <path android:pathData="M182,72 L184,72 A12,12 0 0 1 196,84 L196,106 A12,12 0 0 1 184,118 L182,118 A12,12 0 0 1 170,106 L170,84 A12,12 0 0 1 182,72 Z" android:fillColor="#FF8FA8" android:strokeColor="#6E64A8" android:strokeWidth="4" android:strokeLineCap="round" android:strokeLineJoin="round" />
+</vector>
