@@ -53,3 +53,10 @@ jobs:
         ask "내일 아침 9시에 일어날거여" "01:16" "2026-11-17 화"
         ask "내일 공부를 2시간 해볼까" "01:16" "2026-11-17 화"
 
+
+    - name: Latency probe
+      if: env.CF_TOKEN != ''
+      continue-on-error: true
+      env:
+        KEY: ${{ secrets.GEMINI_API_KEY }}
+      run: node server/tools/probe.mjs
