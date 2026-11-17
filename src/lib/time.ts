@@ -101,7 +101,42 @@ export function fmtDue(due: number, now: number): string {
   const diff = Math.round((due - dayStart(now)) / DAY);
   if (diff === 0) return '오늘';
   if (diff === 1) return '내일';
-  if (diff > 1 && diff < 7) return `${diff}일 뒤`;
+  if (diff === 2) return '모레';
+  if (diff > 2 && diff < 7) return `${'일월화수목금토'[new Date(due).getDay()]}요일`;
   if (diff < 0) return `${-diff}일 지남`;
   return fmtMD(due);
+}
+
+/** "오후 2:00" */
+export function fmtAmPm(ms: number): string {
+  const d = new Date(ms);
+  const h = d.getHours();
+  return `${h < 12 ? '오전' : '오후'} ${h % 12 === 0 ? 12 : h % 12}:${pad(d.getMinutes())}`;
+}
+
+/** "11월 18일 (수)" */
+export function fmtDayLong(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getMonth() + 1}월 ${d.getDate()}일 (${'일월화수목금토'[d.getDay()]})`;
+}
+
+/** 남은 시간을 짧게: "40분", "2시간 10분", "5시간", "3일" */
+export function fmtLeft(ms: number): string {
+  const m = Math.max(1, Math.ceil(ms / MIN));
+  if (m < 60) return `${m}분`;
+  const h = Math.floor(m / 60);
+  if (h < 3) return m % 60 ? `${h}시간 ${m % 60}분` : `${h}시간`;
+  if (h < 48) return `${h}시간`;
+  return `${Math.floor(h / 24)}일`;
+}
+
+/** <input type="datetime-local"> 값과 ms 사이 */
+export function toDateTimeInput(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export function fromDateTimeInput(v: string): number | null {
+  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5])).getTime() : null;
 }

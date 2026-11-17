@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { activeIntervals } from '../lib/intervals';
 import { SLEEP_ID } from '../lib/palette';
 import { fmtClock, HOUR } from '../lib/time';
 import { useStore } from '../store';
+import { Moa } from './Moa';
 
 /** 화면을 주기적으로 다시 그리기 위한 현재 시각. */
 export function useNow(everyMs: number): number {
@@ -14,37 +15,121 @@ export function useNow(everyMs: number): number {
   return now;
 }
 
+const STUDYISH = /(과제|숙제|시험|레포트|리포트|복습|예습|퀴즈|발표|중간|기말|공부)/;
+
+/**
+ * 입력하는 동안 아래에 뜨는 추천 칩.
+ * "과제"처럼 공부에 딸린 말을 치면 과목(공부의 하위 활동)이 줄줄이 뜨고, 누르면 "수치해석 과제"가 된다.
+ * 그 밖에는 치던 단어로 시작하는 활동 이름을 보여준다.
+ */
+function Suggestions({ text, onPick }: { text: string; onPick: (next: string) => void }) {
+  const activities = useStore((s) => s.activities);
+  const addActivity = useStore((s) => s.addActivity);
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState('');
+  const t = text.trim();
+  if (!t) return null;
+  const study = activities.find((a) => a.id === 'study') ?? activities.find((a) => a.name === '공부');
+  const subjects = study ? activities.filter((a) => a.parentId === study.id) : [];
+  const hasSubject = subjects.some((a) => t.includes(a.name));
+
+  let chips: { label: string; next: string; color?: string }[] = [];
+  let subjectMode = false;
+  if (STUDYISH.test(t) && !hasSubject && study) {
+    subjectMode = true;
+    chips = subjects.map((a) => ({ label: a.name, next: `${a.name} ${t}`, color: a.color }));
+  } else {
+    const last = t.split(/\s+/).pop() ?? '';
+    if (last.length >= 1)
+      chips = activities
+        .filter((a) => a.name.startsWith(last) && a.name !== last)
+        .slice(0, 6)
+        .map((a) => ({ label: a.name, next: `${t.slice(0, t.length - last.length)}${a.name} `, color: a.color }));
+  }
+  if (!chips.length && !subjectMode) return null;
+
+  return (
+    <div className="suggest" role="group" aria-label="추천">
+      {subjectMode && <span className="suggest-hint">어느 과목?</span>}
+      {chips.map((c) => (
+        <button key={c.label} type="button" className="chip" style={{ background: c.color }} onMouseDown={(e) => e.preventDefault()} onClick={() => onPick(c.next)}>
+          {c.label}
+        </button>
+      ))}
+      {subjectMode &&
+        study &&
+        (adding ? (
+          <span className="suggest-add">
+            <input
+              aria-label="새 과목 이름"
+              placeholder="과목 이름"
+              maxLength={20}
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                const n = name.trim();
+                if (!n) return;
+                addActivity(n, study.id);
+                setAdding(false);
+                setName('');
+                onPick(`${n} ${t}`);
+              }}
+            />
+          </span>
+        ) : (
+          <button type="button" className="chip" style={{ background: 'var(--bg)' }} onMouseDown={(e) => e.preventDefault()} onClick={() => setAdding(true)}>
+            + 과목
+          </button>
+        ))}
+    </div>
+  );
+}
+
 export function InputBar({ placeholder = '모아야, 나 지금…' }: { placeholder?: string }) {
   const say = useStore((s) => s.say);
   const [text, setText] = useState('');
+  const field = useRef<HTMLInputElement>(null);
   const send = () => {
     if (!text.trim()) return;
     say(text);
     setText('');
   };
   return (
-    <form
-      className="inputbar"
-      onSubmit={(e) => {
-        e.preventDefault();
-        send();
-      }}
-    >
-      <input
-        aria-label="모아에게 말하기"
-        placeholder={placeholder}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        enterKeyHint="send"
-        autoComplete="off"
+    <div className="inputwrap">
+      <Suggestions
+        text={text}
+        onPick={(next) => {
+          setText(next);
+          field.current?.focus();
+        }}
       />
-      <button className="send" type="submit" aria-label="보내기">
-        <svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M10 16V4" />
-          <path d="M5 9l5-5 5 5" />
-        </svg>
-      </button>
-    </form>
+      <form
+        className="inputbar"
+        onSubmit={(e) => {
+          e.preventDefault();
+          send();
+        }}
+      >
+        <input
+          ref={field}
+          aria-label="모아에게 말하기"
+          placeholder={placeholder}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          enterKeyHint="send"
+          autoComplete="off"
+        />
+        <button className="send" type="submit" aria-label="보내기">
+          <svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10 16V4" />
+            <path d="M5 9l5-5 5 5" />
+          </svg>
+        </button>
+      </form>
+    </div>
   );
 }
 
@@ -125,6 +210,9 @@ export function RunningBar({ now, onOpen, pills = true }: { now: number; onOpen:
       <div className="row" style={{ gap: 6 }}>
         {running.map((iv) => (
           <button key={iv.id} className="run-pill" style={{ background: act(iv.activityId)?.color }} onClick={onOpen}>
+            <span className="peek" aria-hidden="true">
+              <Moa size={34} mood="focus" decorative />
+            </span>
             <span className="grow" style={{ textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {act(iv.activityId)?.name}
             </span>

@@ -8,7 +8,7 @@ import { activeIntervals } from '../lib/intervals';
 import { SLEEP_ID } from '../lib/palette';
 import { fmtDate, fmtDur, fmtHM } from '../lib/time';
 import { useStore } from '../store';
-import { GoalRow, TodoRow } from './Todos';
+import { byUrgency, GoalRow, TodoRow, whenOf } from './Todos';
 
 interface Props {
   now: number;
@@ -54,7 +54,10 @@ function GapCard({ now }: { now: number }) {
 function TodayTodos({ now, onOpen }: { now: number; onOpen: () => void }) {
   const todos = useStore((s) => s.todos);
   const today = useStore((s) => logicalToday(now, s.intervals));
-  const due = todos.filter((t) => !t.done && t.type !== 'hours' && t.due !== null && t.due <= today).sort((a, b) => (a.start ?? a.due ?? 0) - (b.start ?? b.due ?? 0));
+  // 오늘 할 것 + 날짜와 상관없이 급한 것(1시간 안에 시작, 하루 안에 마감)
+  const due = todos
+    .filter((t) => !t.done && t.type !== 'hours' && ((t.due !== null && t.due <= today) || ['urgent', 'late'].includes(whenOf(t, today, now)?.level ?? '')))
+    .sort(byUrgency(today, now));
   const goals = todos.filter((t) => t.type === 'hours');
   if (!due.length && !goals.length) return null;
   return (
@@ -68,10 +71,10 @@ function TodayTodos({ now, onOpen }: { now: number; onOpen: () => void }) {
         </button>
       </div>
       {due.slice(0, 3).map((t) => (
-        <TodoRow key={t.id} todo={t} now={today} />
+        <TodoRow key={t.id} todo={t} today={today} clock={now} />
       ))}
       {goals.slice(0, 2).map((t) => (
-        <GoalRow key={t.id} todo={t} now={today} />
+        <GoalRow key={t.id} todo={t} today={today} />
       ))}
     </div>
   );

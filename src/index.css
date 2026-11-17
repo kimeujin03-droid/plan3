@@ -1449,3 +1449,282 @@ a.link {
 .icon-btn {
   font-size: 22px;
 }
+
+/* ───── 계획 줄 ───── */
+.todo {
+  align-items: flex-start;
+  padding: 6px 0;
+}
+
+.todo .check {
+  margin-top: 9px;
+}
+
+.todo-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.todo-text {
+  overflow-wrap: anywhere;
+}
+
+.todo-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--sub);
+}
+
+.todo-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.todo-meta .when.urgent {
+  background: #ffdfe6;
+  color: #8a2444;
+  font-weight: 700;
+}
+
+.todo-meta .when.late {
+  background: #ececf2;
+  color: #8a2444;
+  text-decoration: underline;
+}
+
+.todo-meta .when.soon {
+  background: #fff0c9;
+  color: #6b4d00;
+}
+
+.todo-meta .place {
+  background: #e9e4ff;
+  color: #4a3f8a;
+}
+
+/* 급한 줄은 왼쪽에 굵은 표시 */
+.todo.lv-urgent,
+.todo.lv-late {
+  box-shadow: inset 3px 0 0 #ff8fa8;
+  padding-left: 8px;
+  margin-left: -8px;
+  border-radius: 4px;
+}
+
+/* 10칸 진행도 */
+.progress {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr)) 36px;
+  gap: 3px;
+  align-items: center;
+  height: 28px;
+  touch-action: none;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.progress i {
+  height: 16px;
+  border-radius: 4px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.progress i[data-on='true'] {
+  background: var(--moa);
+  box-shadow: inset 0 0 0 1px #a99be0;
+}
+
+.progress span {
+  font-size: 11px;
+  color: var(--sub);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ───── 날짜·시간 고르기 ───── */
+.picker {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 52px;
+  border-radius: 16px;
+  background: var(--bg);
+  padding: 6px 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.picker-label {
+  font-size: 11px;
+  color: var(--sub);
+}
+
+.picker-value {
+  font-family: 'Jua', sans-serif;
+  font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.picker input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.time-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  color: var(--sub);
+}
+
+.place-row {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.place-field {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 20px;
+  background: var(--bg);
+  color: var(--sub);
+}
+
+.place-field input {
+  width: 108px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  outline: none;
+}
+
+/* ───── 입력 추천 ───── */
+.inputwrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.suggest {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 2px;
+}
+
+.suggest .chip {
+  flex: none;
+  min-height: 36px;
+  font-size: 14px;
+}
+
+.suggest-hint {
+  flex: none;
+  font-size: 12px;
+  color: var(--sub);
+}
+
+.suggest-add input {
+  height: 36px;
+  width: 110px;
+  border-radius: 18px;
+  border: 1.5px solid var(--ink);
+  padding: 0 12px;
+  font: inherit;
+  font-size: 14px;
+  background: var(--card);
+}
+
+/* ───── 기분 ───── */
+.moods {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.moods button {
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 0;
+  border-radius: 16px;
+  font-size: 12px;
+}
+
+.moods button[aria-pressed='true'] {
+  background: var(--bg);
+  box-shadow: inset 0 0 0 2px var(--ink);
+}
+
+.mood-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  text-align: center;
+  font-size: 11px;
+  color: var(--sub);
+}
+
+.mood-week div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.mood-week i {
+  font-style: normal;
+  height: 30px;
+  line-height: 30px;
+}
+
+/* ───── 하는 중 막대에 고개 내민 모아 ───── */
+.run-pill {
+  position: relative;
+  overflow: visible;
+  padding-left: 52px !important;
+}
+
+.run-pill .peek {
+  position: absolute;
+  left: 8px;
+  bottom: 4px;
+  pointer-events: none;
+}
+
+.run-pill .peek .moa {
+  display: block;
+}
+
+.cal-day[data-hot='true'] b {
+  box-shadow: inset 0 -3px 0 #ff8fa8;
+}

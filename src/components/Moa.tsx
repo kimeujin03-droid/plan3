@@ -117,6 +117,8 @@ interface Props {
   pettable?: boolean;
   /** 옆에 다는 별 키링 */
   charm?: boolean;
+  /** 버튼 안 장식처럼 이름이 따로 있을 때: 화면 읽기에서 숨긴다. */
+  decorative?: boolean;
 }
 
 const LABEL: Record<MoaMood, string> = {
@@ -132,7 +134,7 @@ const LABEL: Record<MoaMood, string> = {
   cheer: '응원하는 모아',
 };
 
-export function Moa({ size = 160, mood = 'idle', pettable = false, charm = false }: Props) {
+export function Moa({ size = 160, mood = 'idle', pettable = false, charm = false, decorative = false }: Props) {
   const [petted, setPetted] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -151,8 +153,9 @@ export function Moa({ size = 160, mood = 'idle', pettable = false, charm = false
       width={size}
       height={(size * 176) / 200}
       viewBox="0 0 200 176"
-      role="img"
-      aria-label={pettable ? `${LABEL[shown]}. 쓰다듬을 수 있어요` : LABEL[shown]}
+      role={decorative ? undefined : 'img'}
+      aria-hidden={decorative || undefined}
+      aria-label={decorative ? undefined : pettable ? `${LABEL[shown]}. 쓰다듬을 수 있어요` : LABEL[shown]}
       onPointerDown={pet}
       onPointerMove={(e) => {
         if (e.pointerType === 'mouse' && e.buttons === 0) return;

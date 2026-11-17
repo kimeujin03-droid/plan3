@@ -51,7 +51,7 @@ interface Store extends Data {
   dismissReply: () => void;
   /** 방금 무언가를 끝낸 시각. 모아가 잠깐 신나 한다. 저장하지 않는다. */
   cheerAt: number;
-  addTodo: (text: string, due: number | null, extra?: Pick<Todo, 'type' | 'start' | 'end' | 'minutes' | 'activityId'>) => void;
+  addTodo: (text: string, due: number | null, extra?: Pick<Todo, 'type' | 'start' | 'end' | 'minutes' | 'activityId' | 'dueAt' | 'place'>) => void;
   /** 타이머(mode 'timer')나 뽀모도로를 시작한다. 활동도 같이 시작된다. */
   startTimer: (mode: TimerState['mode'], activityId: string, minutes: number) => void;
   /** 타이머 표시만 끈다. 돌고 있는 기록은 건드리지 않는다. */
