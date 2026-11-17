@@ -8,6 +8,12 @@ import { moaStorage } from './lib/storage';
 import { childColor, DEFAULT_ACTIVITIES, EXTRA_COLORS, SLEEP_ID } from './lib/palette';
 import { mentionsTime, parse, type Command } from './lib/parser';
 
+/** 두 해석이 사실상 같은지(이름 끝의 띄어쓰기 같은 사소한 차이는 무시) */
+function sameCommands(a: Command[], b: Command[]): boolean {
+  const key = (cs: Command[]) => JSON.stringify(cs.map((c) => ({ ...c, ...('text' in c ? { text: c.text.replace(/\s+/g, '') } : {}) })));
+  return key(a) === key(b);
+}
+
 /**
  * 규칙이 알아들은 결과가 미심쩍은지. 미심쩍을 때만 AI에 묻는다(빠르게 하려고).
  * 이름에 말끝이 남았거나("해볼까"), 모르는 활동 이름이 나왔을 때.
@@ -15,7 +21,7 @@ import { mentionsTime, parse, type Command } from './lib/parser';
 function needsAi(cmds: Command[], text: string): boolean {
   return cmds.some((c) => {
     if (c.type === 'memo') return true;
-    if (c.type === 'todo') return /(어|야|여|지|까|네|요|음|다|게|래|고|데)$/.test(c.text) || c.text.length > 16;
+    if (c.type === 'todo') return /(어|야|여|지|까|네|요|음|다|게|래|고|데|나|자|듯)$/.test(c.text) || c.text.length > 16;
     if (c.type === 'backfill') return c.activityId === null;
     if (c.type === 'start') return c.activityId === null && (mentionsTime(text) || c.name.length > 8);
     return false;
@@ -299,6 +305,24 @@ export const useStore = create<Store>()(
         // 규칙이 깔끔하게 알아들었으면 바로 반영한다. 미심쩍을 때만 AI를 기다린다.
         const notUnderstood = needsAi(ruleCmds, trimmed);
         const online = typeof navigator === 'undefined' || navigator.onLine !== false;
+        const onlyMemo = ruleCmds.every((c) => c.type === 'memo');
+        if (notUnderstood && s0.ai && api && online && !onlyMemo) {
+          // 규칙이 뭔가 알아들었으면 기다리게 하지 않는다: 먼저 바로 적고, AI가 다르게 읽으면 조용히 고친다.
+          finish(ruleCmds, 'rule');
+          const applied = get();
+          const running = activeIntervals(s0.intervals).map((iv) => nameOf(s0, iv.activityId));
+          void aiParse(api, trimmed, s0.activities, running, now, today).then((aiCmds) => {
+            if (!aiCmds || sameCommands(aiCmds, ruleCmds)) return;
+            const cur = get();
+            // 그사이 다른 것을 기록했으면 건드리지 않는다.
+            if (cur.intervals !== applied.intervals || cur.todos !== applied.todos || cur.notes !== applied.notes || cur.raw !== applied.raw) return;
+            set({ ...before, raw: cur.raw });
+            finish(aiCmds, 'ai');
+            const fixed = get().lastReply;
+            if (fixed) set({ lastReply: { ...fixed, text: `다시 보니 이게 맞겠다: ${fixed.text}` } });
+          });
+          return;
+        }
         if (notUnderstood && s0.ai && api && online) {
           // 원문은 바로 저장하고, 해석만 서버를 기다린다. 서버가 실패하면 메모로 남는다.
           set({

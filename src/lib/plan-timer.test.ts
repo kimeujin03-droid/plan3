@@ -114,3 +114,23 @@ describe('타이머와 뽀모도로', () => {
     expect(useStore.getState().timer).toBeNull();
   });
 });
+
+describe('AI는 기다리게 하지 않는다', () => {
+  it('규칙이 알아들은 것을 먼저 바로 적고, AI가 다르게 읽으면 고친다', async () => {
+    // 서버 응답을 기다리는 시험이라 진짜 시계를 쓴다.
+    vi.useRealTimers();
+    let answer: (v: Response) => void = () => {};
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((r) => (answer = r))));
+    useStore.setState({ ai: true, apiOverride: 'https://api.test' });
+    // 규칙은 이름에 말끝이 남아 미심쩍다 → AI에게도 묻는다
+    useStore.getState().say('내일 영어 단어 외우기 해볼까나');
+    const first = useStore.getState().todos;
+    expect(first).toHaveLength(1);
+    expect(useStore.getState().thinking).toBe(false);
+    answer(new Response(JSON.stringify({ commands: [{ type: 'plan', text: '영어 단어', when: '내일', date: '2026-11-17' }] })));
+    await vi.waitFor(() => expect(useStore.getState().todos[0].text).toBe('영어 단어'));
+    expect(useStore.getState().todos).toHaveLength(1);
+    expect(useStore.getState().lastReply?.text).toMatch(/^다시 보니/);
+    vi.unstubAllGlobals();
+  });
+});
