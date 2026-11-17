@@ -52,5 +52,6 @@ jobs:
         ask "주말 안에 빨래 돌려야 되는데" "14:05" "2026-11-16 월"
         ask "내일 아침 9시에 일어날거여" "01:16" "2026-11-17 화"
         ask "내일 공부를 2시간 해볼까" "01:16" "2026-11-17 화"
+        echo "steps => $(curl -sS -m 30 -w ' [%{http_code} %{time_total}s]' -X POST $URL/v1/steps -H 'content-type: application/json' -d '{"text":"수치해석 레포트 쓰기"}')"
 
 

@@ -93,8 +93,18 @@ interface PlanLike {
   done: boolean;
   due: number | null;
   start?: number;
+  end?: number;
   dueAt?: number;
   type?: string;
+  activityId?: string;
+}
+
+export interface AlertContext {
+  /** 이 구간들 중 하나로 일정이 이미 시작됐으면 '시작했어?'를 보내지 않는다 */
+  intervals?: { activityId: string; kind: string; start: number }[];
+  activities?: { id: string; parentId?: string }[];
+  /** 아침·밤 한 줄 */
+  brief?: boolean;
 }
 
 const HM = (ms: number) => {
@@ -108,14 +118,21 @@ const HM = (ms: number) => {
  * - 마감 시각까지 정한 마감: 하루 전, 3시간 전, 1시간 전
  * - 날짜만 정한 마감: 전날 저녁 9시, 그날 아침 9시
  */
-export function planAlerts(todos: PlanLike[], now: number): PlanAlert[] {
+export function planAlerts(todos: PlanLike[], now: number, ctx: AlertContext = {}): PlanAlert[] {
   const out: PlanAlert[] = [];
   const DAY_MS = 24 * 60 * 60 * 1000;
+  const startedNear = (t: PlanLike) => {
+    if (!t.activityId || !ctx.intervals) return false;
+    const ids = new Set([t.activityId, ...(ctx.activities ?? []).filter((a) => a.parentId === t.activityId).map((a) => a.id)]);
+    return ctx.intervals.some((iv) => iv.kind === 'exec' && ids.has(iv.activityId) && iv.start >= t.start! - 20 * 60_000);
+  };
   for (const t of todos) {
     if (t.done || t.type === 'hours') continue;
     if (t.start !== undefined && t.dueAt === undefined) {
       out.push({ at: t.start - 60 * 60_000, title: `1시간 뒤 · ${t.text}`, body: `${HM(t.start)}에 시작해. 미리 준비하자.` });
       out.push({ at: t.start - 10 * 60_000, title: `10분 뒤 · ${t.text}`, body: '슬슬 일어나서 움직일 시간!' });
+      // 시작할 수 있는 일(활동이 있는 일정)인데 5분이 지나도 기록이 없으면 딱 한 번만 묻는다.
+      if (t.activityId && !startedNear(t)) out.push({ at: t.start + 5 * 60_000, title: `${t.text} 시작했어?`, body: '아직이면 딱 5분만 해볼까? 눌러서 열어줘.' });
     } else if (t.dueAt !== undefined) {
       out.push({ at: t.dueAt - DAY_MS, title: `내일 ${HM(t.dueAt)}까지 · ${t.text}`, body: '하루 남았어. 오늘 조금만 해둘까?' });
       out.push({ at: t.dueAt - 3 * 60 * 60_000, title: `3시간 남음 · ${t.text}`, body: `${HM(t.dueAt)}까지야.` });
@@ -125,19 +142,44 @@ export function planAlerts(todos: PlanLike[], now: number): PlanAlert[] {
       out.push({ at: t.due + 9 * 60 * 60_000, title: `오늘까지 · ${t.text}`, body: '오늘이 마감이야. 할 수 있어!' });
     }
   }
+  if (ctx.brief) out.push(...briefs(todos, now));
   return out.filter((a) => a.at > now + 30_000).sort((a, b) => a.at - b.at).slice(0, PLAN_MAX);
 }
 
+/** 아침 8시: 그날 계획 한 줄. 밤 9시 반: 빈 시간 채우기. 앞으로 사흘 치만. */
+function briefs(todos: PlanLike[], now: number): PlanAlert[] {
+  const out: PlanAlert[] = [];
+  const d0 = new Date(now);
+  const base = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate()).getTime();
+  for (let i = 0; i < 3; i++) {
+    const day = new Date(base);
+    day.setDate(day.getDate() + i);
+    const t0 = day.getTime();
+    const items = todos
+      .filter((t) => !t.done && t.type !== 'hours' && t.due === t0)
+      .sort((a, b) => (a.start ?? a.dueAt ?? Infinity) - (b.start ?? b.dueAt ?? Infinity));
+    if (items.length) {
+      const list = items
+        .slice(0, 3)
+        .map((t) => (t.start !== undefined ? `${HM(t.start)} ${t.text}` : t.dueAt !== undefined ? `${t.text}(${HM(t.dueAt)}까지)` : `${t.text} 마감`))
+        .join(', ');
+      out.push({ at: t0 + 8 * 60 * 60_000, title: `오늘 ${items.length}개`, body: `${list}${items.length > 3 ? ' …' : ''}` });
+    }
+    out.push({ at: t0 + 21.5 * 60 * 60_000, title: '오늘 하루 어땠어?', body: '비어 있는 시간이 있으면 한 번에 채우고 자자.' });
+  }
+  return out;
+}
+
 /** 계획 알림을 모두 지우고 다시 맞춘다. 계획이 바뀔 때마다 부른다. */
-export async function reschedulePlanAlerts(todos: PlanLike[], enabled: boolean): Promise<void> {
+export async function reschedulePlanAlerts(todos: PlanLike[], enabled: boolean, ctx: AlertContext = {}): Promise<void> {
   try {
     const ln = await plugin();
     if (!ln) return;
     const pending = await ln.getPending();
     const old = pending.notifications.filter((n) => n.id >= PLAN_BASE && n.id < PLAN_BASE + 1000).map((n) => ({ id: n.id }));
     if (old.length) await ln.cancel({ notifications: old });
-    if (!enabled) return;
-    const alerts = planAlerts(todos, Date.now());
+    if (!enabled && !ctx.brief) return;
+    const alerts = planAlerts(enabled ? todos : [], Date.now(), ctx);
     if (!alerts.length) return;
     const perm = await ln.checkPermissions();
     if (perm.display !== 'granted' && (await ln.requestPermissions()).display !== 'granted') return;

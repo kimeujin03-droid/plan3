@@ -61,6 +61,37 @@ export interface Todo {
   place?: string;
   /** range·hours: 어느 활동인지 */
   activityId?: string;
+  /** 반복 일정에서 생긴 것이면 그 반복의 id */
+  seriesId?: string;
+  /** 잘게 쪼갠 단계. 있으면 진행도는 단계에서 계산한다. */
+  steps?: Step[];
+}
+
+export interface Step {
+  text: string;
+  done: boolean;
+}
+
+/** 반복 일정: "매주 화 9~12시 수업". 앞으로 2주치를 계획으로 만들어 둔다. */
+export interface Series {
+  id: string;
+  text: string;
+  activityId: string | null;
+  /** 요일 0(일)~6(토) */
+  days: number[];
+  /** 하루 안의 분 */
+  startMin: number;
+  endMin: number | null;
+  place?: string;
+  /** 사용자가 지운 날(그날 0시): 다시 만들지 않는다 */
+  skip: number[];
+  createdAt: number;
+}
+
+/** 모아 꾸미기: 앱과 위젯이 같이 쓴다 */
+export interface Look {
+  accessory: 'none' | 'ribbon' | 'hat' | 'headphones' | 'glasses' | 'flower';
+  board: 'none' | 'sign' | 'skate';
 }
 
 /** 타이머·뽀모도로 진행 상태. 스톱워치는 이 값 없이 그냥 기록만 돈다. */
@@ -113,11 +144,15 @@ export interface Data {
   planVersions: PlanVersion[];
   todos: Todo[];
   cellNotes: CellNote[];
+  series: Series[];
+  look: Look;
   timer: TimerState | null;
   sleeping: boolean;
   nudge: boolean;
   /** 계획 알림(1시간 전·10분 전·마감 전) */
   planAlerts: boolean;
+  /** 아침 한 줄(오늘 계획), 밤 한 줄(빈 시간 채우기) */
+  dailyBrief: boolean;
   /** 못 알아들은 말을 AI 서버에 보내도 된다고 사용자가 켠 경우에만 true */
   ai: boolean;
   /** 직접 운영하는 서버 주소. 비어 있으면 빌드에 들어간 기본 주소를 쓴다. */

@@ -21,6 +21,8 @@ import {
   HOUR,
   monthStart,
 } from '../lib/time';
+import { aiSteps, DEFAULT_API } from '../lib/ai';
+import { describeSeries } from '../lib/series';
 import type { Activity, Interval, Todo } from '../lib/types';
 import { useStore } from '../store';
 
@@ -32,40 +34,8 @@ const TYPES: { id: PlanType; name: string; hint: string }[] = [
   { id: 'hours', name: '매일 몇 시간', hint: '하루에 이만큼은 하고 싶은 것' },
 ];
 
-/* ───── 남은 시간과 급함 ───── */
-
-export type Urgency = 'late' | 'urgent' | 'soon' | 'normal';
-
-/** 이 계획이 언제인지, 얼마나 급한지. today는 자기 전 기준의 오늘 0시, clock은 지금 시각. */
-export function whenOf(t: Todo, today: number, clock: number): { text: string; level: Urgency; target: number } | null {
-  // 일정(시각이 있는 일)
-  if (t.start !== undefined && t.dueAt === undefined) {
-    const day = `${fmtDue(dayStart(t.start), today)} ${fmtHM(t.start)}${t.end !== undefined ? `–${fmtHM(t.end)}` : ''}`;
-    const left = t.start - clock;
-    if (t.end !== undefined && clock >= t.start && clock < t.end) return { text: `하는 중 · ${fmtHM(t.end)}까지`, level: 'urgent', target: t.start };
-    if (left < 0) return { text: `${day} · 지남`, level: 'late', target: t.start };
-    if (left <= HOUR) return { text: `${fmtLeft(left)} 뒤`, level: 'urgent', target: t.start };
-    if (left < 12 * HOUR) return { text: `${day} · ${fmtLeft(left)} 뒤`, level: left < 3 * HOUR ? 'soon' : 'normal', target: t.start };
-    return { text: day, level: 'normal', target: t.start };
-  }
-  // 마감
-  if (t.due === null) return null;
-  const target = t.dueAt ?? t.due + DAY;
-  // 시각 없는 마감은 그날이 끝날 때(자기 전까지)가 기한이다.
-  if (t.dueAt === undefined) {
-    if (t.due < today) return { text: `${Math.round((today - t.due) / DAY)}일 지남`, level: 'late', target };
-    if (t.due === today) return { text: '급해 · 오늘까지', level: 'urgent', target };
-  }
-  const left = target - clock;
-  if (left < 0) return { text: `${fmtLeft(-left)} 지남`, level: 'late', target };
-  if (left < DAY) return { text: `급해 · ${fmtLeft(left)} 남음`, level: 'urgent', target };
-  const by = `${fmtDue(t.due, today)}${t.dueAt !== undefined ? ` ${fmtHM(t.dueAt)}` : ''}까지`;
-  if (left < 3 * DAY) return { text: `${by} · ${fmtLeft(left)} 남음`, level: 'soon', target };
-  return { text: by, level: 'normal', target };
-}
-
-export const byUrgency = (today: number, clock: number) => (a: Todo, b: Todo) =>
-  (whenOf(a, today, clock)?.target ?? Infinity) - (whenOf(b, today, clock)?.target ?? Infinity);
+export { byUrgency, whenOf, type Urgency } from '../lib/when';
+import { byUrgency, whenOf } from '../lib/when';
 
 /** 오늘 그 활동(하위 활동 포함)을 실제로 한 시간(ms) */
 export function doneToday(todo: Todo, intervals: Interval[], activities: Activity[], today: number): number {
@@ -95,6 +65,8 @@ function PinIcon() {
 function Progress({ todo }: { todo: Todo }) {
   const setProgress = useStore((s) => s.setProgress);
   const p = todo.progress ?? 0;
+  // 단계가 있으면 진행도는 단계에서 나온다: 직접 바꾸지 않는다.
+  const readOnly = !!todo.steps?.length;
   const drag = useRef(false);
   const at = (e: PointerEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -115,6 +87,7 @@ function Progress({ todo }: { todo: Todo }) {
         if (e.key === 'ArrowLeft') setProgress(todo.id, p - 1);
       }}
       onPointerDown={(e) => {
+        if (readOnly) return;
         drag.current = true;
         try {
           e.currentTarget.setPointerCapture(e.pointerId);
@@ -126,7 +99,7 @@ function Progress({ todo }: { todo: Todo }) {
         setProgress(todo.id, i + 1 === p ? i : i + 1);
       }}
       onPointerMove={(e) => {
-        if (drag.current) setProgress(todo.id, at(e) + 1);
+        if (drag.current && !readOnly) setProgress(todo.id, at(e) + 1);
       }}
       onPointerUp={() => {
         drag.current = false;
@@ -139,6 +112,102 @@ function Progress({ todo }: { todo: Todo }) {
         <i key={i} data-on={i < p} />
       ))}
       <span>{p * 10}%</span>
+    </div>
+  );
+}
+
+/** "쪼개기": AI가 켜져 있으면 단계를 받아 오고, 아니면 직접 첫 단계를 적게 한다. */
+function SplitButton({ todo }: { todo: Todo }) {
+  const ai = useStore((s) => s.ai);
+  const api = useStore((s) => s.apiOverride) || DEFAULT_API;
+  const setSteps = useStore((s) => s.setSteps);
+  const addStep = useStore((s) => s.addStep);
+  const [busy, setBusy] = useState(false);
+  const [manual, setManual] = useState(false);
+  const [text, setText] = useState('');
+  if (manual)
+    return (
+      <form
+        className="row grow"
+        style={{ gap: 6 }}
+        onSubmit={(e) => {
+          e.preventDefault();
+          addStep(todo.id, text);
+          setText('');
+        }}
+      >
+        <input className="field grow" style={{ minHeight: 36, height: 36 }} aria-label="첫 단계" placeholder="첫 단계 (예: 파일 열기)" maxLength={40} autoFocus value={text} onChange={(e) => setText(e.target.value)} />
+      </form>
+    );
+  return (
+    <button
+      className="pill"
+      style={{ background: 'var(--moa)', minHeight: 36 }}
+      disabled={busy}
+      onClick={async () => {
+        if (!(ai && api)) {
+          setManual(true);
+          return;
+        }
+        setBusy(true);
+        const steps = await aiSteps(api, todo.text);
+        setBusy(false);
+        if (steps) setSteps(todo.id, steps);
+        else setManual(true);
+      }}
+    >
+      {busy ? '나누는 중…' : '잘게 쪼개기'}
+    </button>
+  );
+}
+
+/** 쪼갠 단계: 평소엔 다음 단계 하나만, 글자를 눌러 펼치면 전부 */
+function Steps({ todo, open }: { todo: Todo; open: boolean }) {
+  const toggle = useStore((s) => s.toggleStep);
+  const remove = useStore((s) => s.removeStep);
+  const add = useStore((s) => s.addStep);
+  const [text, setText] = useState('');
+  const steps = todo.steps ?? [];
+  const done = steps.filter((s) => s.done).length;
+  const next = steps.findIndex((s) => !s.done);
+  const shown = open ? steps.map((s, i) => ({ s, i })) : next >= 0 ? [{ s: steps[next], i: next }] : [];
+  return (
+    <div className="steps">
+      {shown.map(({ s, i }) => (
+        <div key={i} className="step">
+          <button className="check small" role="checkbox" aria-checked={s.done} aria-label={`${s.text} ${s.done ? '취소' : '끝냄'}`} onClick={() => toggle(todo.id, i)}>
+            {s.done && (
+              <svg aria-hidden="true" width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="2,7 6,11 12,3" />
+              </svg>
+            )}
+          </button>
+          <span className="grow" style={{ textDecoration: s.done ? 'line-through' : undefined, color: s.done ? 'var(--sub)' : undefined }}>
+            {!open && <em>다음 · </em>}
+            {s.text}
+          </span>
+          {open ? (
+            <button className="step-x" aria-label={`${s.text} 지우기`} onClick={() => remove(todo.id, i)}>
+              ×
+            </button>
+          ) : (
+            <span className="sub" style={{ fontSize: 11 }}>
+              {done}/{steps.length}
+            </span>
+          )}
+        </div>
+      ))}
+      {open && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            add(todo.id, text);
+            setText('');
+          }}
+        >
+          <input className="field" style={{ minHeight: 34, height: 34, fontSize: 13 }} aria-label="단계 더하기" placeholder="+ 단계 더하기" maxLength={40} value={text} onChange={(e) => setText(e.target.value)} />
+        </form>
+      )}
     </div>
   );
 }
@@ -192,8 +261,13 @@ export function TodoRow({ todo, today, clock }: { todo: Todo; today: number; clo
           <button className="grow todo-text" aria-expanded={open} style={{ textDecoration: todo.done ? 'line-through' : undefined, color: todo.done ? 'var(--sub)' : undefined }} onClick={() => setOpen(!open)}>
             {todo.text}
           </button>
-          {open && <RemoveButton onClick={() => remove(todo.id)} />}
         </div>
+        {open && (
+          <div className="row" style={{ gap: 6 }}>
+            {!todo.done && !todo.steps?.length && (todo.start === undefined || todo.dueAt !== undefined) && <SplitButton todo={todo} />}
+            <RemoveButton onClick={() => remove(todo.id)} />
+          </div>
+        )}
         {(when || todo.place) && (
           <div className="todo-meta">
             {when && <span className={`when ${when.level}`}>{when.text}</span>}
@@ -205,6 +279,7 @@ export function TodoRow({ todo, today, clock }: { todo: Todo; today: number; clo
             )}
           </div>
         )}
+        {!!todo.steps?.length && <Steps todo={todo} open={open} />}
         {showProgress && <Progress todo={todo} />}
       </div>
     </div>
@@ -261,6 +336,8 @@ function AddTodo({ today, clock, fixedDue }: { today: number; clock: number; fix
   const [to, setTo] = useState('15:00');
   const [hours, setHours] = useState(2);
   const [actId, setActId] = useState(activities[0].id);
+  const [repeat, setRepeat] = useState<number[]>([]);
+  const addSeries = useStore((s) => s.addSeries);
   const name = activities.find((a) => a.id === actId)?.name ?? '';
   const badRange = type === 'range' && to <= from;
   const extra = place.trim() ? { place: place.trim() } : {};
@@ -271,6 +348,12 @@ function AddTodo({ today, clock, fixedDue }: { today: number; clock: number; fix
       else addTodo(text, dueAt === null ? null : dayStart(dueAt), { ...extra, ...(dueAt === null ? {} : { dueAt }) });
     } else if (type === 'range') {
       if (badRange) return;
+      if (repeat.length) {
+        const min = (hm: string) => Number(hm.slice(0, 2)) * 60 + Number(hm.slice(3, 5));
+        addSeries({ text: text.trim() || name, activityId: actId, days: repeat, startMin: min(from), endMin: min(to), ...(place.trim() ? { place: place.trim() } : {}) });
+        setText('');
+        return;
+      }
       addTodo(text.trim() || name, day, { ...extra, type: 'range', start: toMs(day, from), end: toMs(day, to), activityId: actId });
     } else addTodo(text.trim() || `${name} 매일 ${hours}시간`, null, { type: 'hours', minutes: hours * 60, activityId: actId });
     setText('');
@@ -325,13 +408,23 @@ function AddTodo({ today, clock, fixedDue }: { today: number; clock: number; fix
 
       {type === 'range' && (
         <>
-          <PickerButton label="날짜" value={fmtDayLong(day)} type="date" onChange={(v) => setDay(fromDateInput(v) ?? day)} wide />
+          {repeat.length === 0 && <PickerButton label="날짜" value={fmtDayLong(day)} type="date" onChange={(v) => setDay(fromDateInput(v) ?? day)} wide />}
           <div className="time-pair">
             <PickerButton label="시작" value={fmtAmPm(toMs(day, from))} type="time" onChange={(v) => v && setFrom(v)} />
             <span aria-hidden="true">→</span>
             <PickerButton label="끝" value={fmtAmPm(toMs(day, to))} type="time" onChange={(v) => v && setTo(v)} />
           </div>
           {badRange && <div className="hint" style={{ color: '#8a2444' }}>끝 시각이 시작보다 뒤여야 해.</div>}
+          <div className="repeat-row" role="group" aria-label="반복할 요일">
+            <span className="sub" style={{ fontSize: 12 }}>
+              반복
+            </span>
+            {[1, 2, 3, 4, 5, 6, 0].map((d) => (
+              <button key={d} type="button" aria-pressed={repeat.includes(d)} onClick={() => setRepeat(repeat.includes(d) ? repeat.filter((x) => x !== d) : [...repeat, d].sort())}>
+                {'일월화수목금토'[d]}
+              </button>
+            ))}
+          </div>
         </>
       )}
 
@@ -372,7 +465,10 @@ function ListView({ today, clock }: { today: number; clock: number }) {
   const todos = useStore((s) => s.todos);
   const [showDone, setShowDone] = useState(false);
   const goals = todos.filter((t) => t.type === 'hours');
-  const open = todos.filter((t) => !t.done && t.type !== 'hours').sort(byUrgency(today, clock));
+  const series = useStore((s) => s.series);
+  const removeSeries = useStore((s) => s.removeSeries);
+  // 반복 일정은 오늘·내일 것만 목록에 둔다(나머지는 달력에서).
+  const open = todos.filter((t) => !t.done && t.type !== 'hours' && !(t.seriesId && t.due !== null && t.due > today + DAY)).sort(byUrgency(today, clock));
   const done = todos.filter((t) => t.done && t.type !== 'hours').sort((a, b) => (b.doneAt ?? 0) - (a.doneAt ?? 0));
   const level = (t: Todo) => whenOf(t, today, clock)?.level;
   return (
@@ -384,6 +480,25 @@ function ListView({ today, clock }: { today: number; clock: number }) {
       <Group title="오늘" todos={open.filter((t) => t.due === today && level(t) !== 'urgent' && level(t) !== 'late')} today={today} clock={clock} />
       <Group title="다가오는" todos={open.filter((t) => t.due !== null && t.due > today && level(t) !== 'urgent' && level(t) !== 'late')} today={today} clock={clock} />
       <Group title="기한 없음" todos={open.filter((t) => t.due === null)} today={today} clock={clock} />
+      {series.length > 0 && (
+        <div className="card" style={{ gap: 6, padding: '14px 12px 10px 16px' }}>
+          <div className="sub" style={{ fontSize: 13 }}>
+            반복 · 2주치가 달력과 격자에 미리 들어가 있어
+          </div>
+          {series.map((x) => (
+            <div key={x.id} className="row" style={{ gap: 8, minHeight: 44 }}>
+              <div className="grow">
+                <div style={{ fontSize: 15 }}>{x.text}</div>
+                <div className="todo-meta">
+                  <span>{describeSeries(x)}</span>
+                  {x.place && <span className="place">{x.place}</span>}
+                </div>
+              </div>
+              <RemoveButton onClick={() => removeSeries(x.id)} />
+            </div>
+          ))}
+        </div>
+      )}
       {done.length > 0 && (
         <button className="pill clear" style={{ alignSelf: 'flex-start' }} aria-expanded={showDone} onClick={() => setShowDone(!showDone)}>
           끝낸 것 {done.length}개 {showDone ? '접기' : '보기'}

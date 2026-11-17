@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Moa } from '../components/Moa';
+import { NextSheet } from '../components/NextSheet';
 import { StartGrid } from '../components/Pickers';
 import { useMoaMood } from '../components/useMoaMood';
 import { logicalToday } from '../lib/day';
@@ -97,6 +98,8 @@ export function Home({ now, onOpenSettings, onOpenTodos }: Props) {
     const iv = activeIntervals(s.intervals).find((v) => v.activityId !== SLEEP_ID);
     return iv ? s.activities.find((a) => a.id === iv.activityId)?.name : undefined;
   });
+  const [nextOpen, setNextOpen] = useState(false);
+  const look = useStore((s) => s.look);
   let [hello, sub] = HELLO[mood] ?? HELLO.idle;
   if (mood === 'focus' && runningName) hello = `${runningName} 하는 중`;
 
@@ -124,7 +127,7 @@ export function Home({ now, onOpenSettings, onOpenTodos }: Props) {
       </div>
 
       <div className="row" style={{ gap: 14 }}>
-        <Moa size={120} mood={mood} pettable charm />
+        <Moa size={120} mood={mood} pettable charm look={look} boardText={sleeping ? '쿨쿨' : runningName ?? '모아'} />
         <div className="grow">
           <div className="jua" style={{ fontSize: 24 }}>
             {hello}
@@ -132,8 +135,14 @@ export function Home({ now, onOpenSettings, onOpenTodos }: Props) {
           <div className="sub" style={{ fontSize: 14, marginTop: 4 }}>
             {sub}
           </div>
+          {!sleeping && mood !== 'focus' && (
+            <button className="pill ink next-btn" onClick={() => setNextOpen(true)}>
+              지금 뭐 하지?
+            </button>
+          )}
         </div>
       </div>
+      {nextOpen && <NextSheet now={now} onClose={() => setNextOpen(false)} />}
 
       {sleeping ? (
         <button className="big-btn" style={{ background: '#FFE169' }} onClick={() => say('나 일어났어')}>

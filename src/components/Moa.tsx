@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import type { Look } from '../lib/types';
 
 /** 눈만으로 짓는 표정. 이름은 레퍼런스 시트의 상태 이름을 따른다. */
 export type MoaMood =
@@ -109,6 +110,80 @@ function extras(mood: MoaMood): ReactNode {
   }
 }
 
+/** 머리·얼굴에 얹는 것. 몸통 좌표(가로 14~186, 위 22~162, 귀 끝 y≈5)에 맞춰 그린다. */
+function accessory(kind: Look['accessory']): ReactNode {
+  switch (kind) {
+    case 'ribbon':
+      return (
+        <g transform="translate(148 30) rotate(18)">
+          <path d="M0,0 L-22,-13 Q-26,0 -22,13 Z" fill="#FF9EC4" stroke="#E57AA5" strokeWidth="2" strokeLinejoin="round" />
+          <path d="M0,0 L22,-13 Q26,0 22,13 Z" fill="#FF9EC4" stroke="#E57AA5" strokeWidth="2" strokeLinejoin="round" />
+          <circle r="6" fill="#FFB8D6" stroke="#E57AA5" strokeWidth="2" />
+        </g>
+      );
+    case 'hat':
+      return (
+        <g>
+          <ellipse cx="100" cy="27" rx="44" ry="12" fill="#7FA8F0" />
+          <path d="M70,27 Q72,2 100,2 Q128,2 130,27 Z" fill="#9CBCF7" />
+          <circle cx="100" cy="2" r="6" fill="#FFD45C" />
+          <path d="M72,22 Q100,30 128,22" fill="none" stroke="#FFFFFF" strokeWidth="4" strokeLinecap="round" opacity="0.7" />
+        </g>
+      );
+    case 'headphones':
+      return (
+        <g>
+          <path d="M24,96 Q24,4 100,4 Q176,4 176,96" fill="none" stroke="#6E64A8" strokeWidth="9" strokeLinecap="round" />
+          <rect x="4" y="72" width="26" height="46" rx="12" fill="#FF8FA8" stroke="#6E64A8" strokeWidth="4" />
+          <rect x="170" y="72" width="26" height="46" rx="12" fill="#FF8FA8" stroke="#6E64A8" strokeWidth="4" />
+        </g>
+      );
+    case 'glasses':
+      return (
+        <g fill="none" stroke="#FFD45C" strokeWidth="4">
+          <rect x="50" y="74" width="44" height="40" rx="16" />
+          <rect x="106" y="74" width="44" height="40" rx="16" />
+          <path d="M94,90 Q100,85 106,90" />
+        </g>
+      );
+    case 'flower':
+      return (
+        <g transform="translate(52 30)">
+          {[0, 72, 144, 216, 288].map((r) => (
+            <ellipse key={r} cx="0" cy="-10" rx="7" ry="10" fill="#FFF2A8" stroke="#F2C94C" strokeWidth="1.5" transform={`rotate(${r})`} />
+          ))}
+          <circle r="6" fill="#FF9F68" />
+        </g>
+      );
+    default:
+      return null;
+  }
+}
+
+function skateboard(): ReactNode {
+  return (
+    <g>
+      <path d="M12,172 Q14,182 26,182 L174,182 Q186,182 188,172" fill="#FF8FA8" stroke="#E5707F" strokeWidth="3" strokeLinejoin="round" />
+      <circle cx="50" cy="194" r="9" fill="#26233A" />
+      <circle cx="150" cy="194" r="9" fill="#26233A" />
+      <circle cx="50" cy="194" r="3" fill="#FFD45C" />
+      <circle cx="150" cy="194" r="3" fill="#FFD45C" />
+    </g>
+  );
+}
+
+/** 몸 앞에 드는 이름표 보드: 지금 하는 일을 쓴다 */
+function signBoard(text: string): ReactNode {
+  return (
+    <g>
+      <rect x="46" y="166" width="108" height="42" rx="12" fill="#FFFFFF" stroke="#B3A7E6" strokeWidth="3" />
+      <text x="100" y="194" textAnchor="middle" fontSize="20" fontFamily="Jua, sans-serif" fill="#26233A">
+        {text.length > 7 ? `${text.slice(0, 6)}…` : text}
+      </text>
+    </g>
+  );
+}
+
 interface Props {
   /** 가로 크기(px) */
   size?: number;
@@ -119,6 +194,10 @@ interface Props {
   charm?: boolean;
   /** 버튼 안 장식처럼 이름이 따로 있을 때: 화면 읽기에서 숨긴다. */
   decorative?: boolean;
+  /** 액세서리와 받침 */
+  look?: Look;
+  /** 이름표 보드에 쓸 글(짧게) */
+  boardText?: string;
 }
 
 const LABEL: Record<MoaMood, string> = {
@@ -134,7 +213,9 @@ const LABEL: Record<MoaMood, string> = {
   cheer: '응원하는 모아',
 };
 
-export function Moa({ size = 160, mood = 'idle', pettable = false, charm = false, decorative = false }: Props) {
+export function Moa({ size = 160, mood = 'idle', pettable = false, charm = false, decorative = false, look, boardText }: Props) {
+  const board = look?.board ?? 'none';
+  const tall = board !== 'none';
   const [petted, setPetted] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -151,8 +232,8 @@ export function Moa({ size = 160, mood = 'idle', pettable = false, charm = false
     <svg
       className={`moa${pettable ? ' pettable' : ''}${petted ? ' petted' : ''}`}
       width={size}
-      height={(size * 176) / 200}
-      viewBox="0 0 200 176"
+      height={(size * (tall ? 214 : 176)) / 200}
+      viewBox={`0 0 200 ${tall ? 214 : 176}`}
       role={decorative ? undefined : 'img'}
       aria-hidden={decorative || undefined}
       aria-label={decorative ? undefined : pettable ? `${LABEL[shown]}. 쓰다듬을 수 있어요` : LABEL[shown]}
@@ -179,7 +260,10 @@ export function Moa({ size = 160, mood = 'idle', pettable = false, charm = false
         <rect x="32" y="46" width="136" height="96" rx="42" fill="none" stroke="#3A3261" strokeWidth="2" />
         <g className={shown === 'idle' ? 'moa-eyes blink' : 'moa-eyes'}>{eyes(shown)}</g>
         {extras(shown)}
+        {look && accessory(look.accessory)}
+        {board === 'skate' && skateboard()}
       </g>
+      {board === 'sign' && signBoard(boardText ?? '모아')}
     </svg>
   );
 }

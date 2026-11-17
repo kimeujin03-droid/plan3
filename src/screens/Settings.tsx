@@ -3,7 +3,9 @@ import pkg from '../../package.json';
 import { DEFAULT_API } from '../lib/ai';
 import { exactAlarmStatus, openExactAlarmSetting, requestNudgePermission } from '../lib/notify';
 import { SLEEP_ID } from '../lib/palette';
-import { shareExport } from '../lib/storage';
+import { listBackups, readBackup, shareExport } from '../lib/storage';
+import { Moa } from '../components/Moa';
+import type { Look } from '../lib/types';
 import { pickData, useStore } from '../store';
 
 export const PRIVACY_URL = 'https://github.com/kimeujin03-droid/plan3/blob/moa/docs/privacy.md';
@@ -193,7 +195,9 @@ export function Settings({ onClose }: { onClose: () => void }) {
           )}
         </div>
 
+        <LookCard />
         <PlanAlertCard />
+        <BackupCard onMsg={setMsg} />
 
         <div className="card">
           <div className="row between">
@@ -270,6 +274,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
 function PlanAlertCard() {
   const on = useStore((s) => s.planAlerts);
   const set = useStore((s) => s.setPlanAlerts);
+  const brief = useStore((s) => s.dailyBrief);
+  const setBrief = useStore((s) => s.setDailyBrief);
   const [exact, setExact] = useState<'granted' | 'denied' | null>(null);
   useEffect(() => {
     const check = () => void exactAlarmStatus().then(setExact);
@@ -302,6 +308,95 @@ function PlanAlertCard() {
         </div>
       )}
       {on && exact === 'granted' && <div className="sub" style={{ fontSize: 13 }}>정확한 시각에 울리도록 허용돼 있어.</div>}
+      <div className="row between">
+        <div className="grow">
+          <div className="h2" style={{ fontSize: 16 }}>아침·밤 한 줄</div>
+          <div className="sub">아침 8시에 그날 계획, 밤 9시 반에 빈 시간 채우기를 한 줄로.</div>
+        </div>
+        <Switch on={brief} label="아침·밤 한 줄" onToggle={() => setBrief(!brief)} />
+      </div>
+    </div>
+  );
+}
+
+/** 하루 한 번 저절로 남는 백업에서 되살리기 */
+function BackupCard({ onMsg }: { onMsg: (m: string) => void }) {
+  const importData = useStore((s) => s.importData);
+  const [files, setFiles] = useState<string[] | null>(null);
+  useEffect(() => {
+    void listBackups().then(setFiles);
+  }, []);
+  return (
+    <div className="card">
+      <div className="h2">자동 백업</div>
+      <div className="sub">하루에 한 번 이 폰에 저절로 저장돼(최근 7일). 폰의 구글 백업이 켜져 있으면 이것도 같이 올라가서, 폰을 바꾸거나 앱을 다시 깔아도 돌아와.</div>
+      {files === null ? null : files.length === 0 ? (
+        <div className="sub" style={{ fontSize: 13 }}>아직 백업이 없어. 내일부터 하나씩 생겨. (웹에서는 안 돼)</div>
+      ) : (
+        <div className="chips">
+          {files.map((f) => (
+            <button
+              key={f}
+              className="chip"
+              style={{ background: 'var(--bg)' }}
+              onClick={async () => {
+                const json = await readBackup(f);
+                const day = f.slice(4, 14);
+                onMsg(json && importData(json) ? `${day} 백업으로 되살렸어. 되돌리기를 누르면 원래대로 돌아가.` : '이 백업을 읽지 못했어.');
+              }}
+            >
+              {f.slice(9, 14).replace('-', '/')} 되살리기
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const ACCESSORIES: { id: Look['accessory']; name: string }[] = [
+  { id: 'none', name: '없음' },
+  { id: 'ribbon', name: '리본' },
+  { id: 'hat', name: '모자' },
+  { id: 'headphones', name: '헤드폰' },
+  { id: 'glasses', name: '안경' },
+  { id: 'flower', name: '꽃' },
+];
+const BOARDS: { id: Look['board']; name: string }[] = [
+  { id: 'sign', name: '이름표' },
+  { id: 'skate', name: '스케이트보드' },
+  { id: 'none', name: '없음' },
+];
+
+/** 모아 꾸미기: 앱 첫 화면과 바탕화면 위젯의 모아가 같이 바뀐다 */
+function LookCard() {
+  const look = useStore((s) => s.look);
+  const setLook = useStore((s) => s.setLook);
+  return (
+    <div className="card">
+      <div className="h2">모아 꾸미기</div>
+      <div className="row" style={{ gap: 12, alignItems: 'flex-end' }}>
+        <Moa size={110} look={look} boardText="공부 중" mood="smile" decorative />
+        <div className="grow sub" style={{ fontSize: 13 }}>
+          첫 화면과 바탕화면 위젯의 모아가 같이 바뀌어. 이름표에는 지금 하는 일이 떠.
+        </div>
+      </div>
+      <div className="sub" style={{ fontSize: 13 }}>액세서리</div>
+      <div className="chips">
+        {ACCESSORIES.map((a) => (
+          <button key={a.id} className="chip" style={{ background: 'var(--bg)' }} aria-pressed={look.accessory === a.id} onClick={() => setLook({ accessory: a.id })}>
+            {a.name}
+          </button>
+        ))}
+      </div>
+      <div className="sub" style={{ fontSize: 13 }}>받침</div>
+      <div className="chips">
+        {BOARDS.map((b) => (
+          <button key={b.id} className="chip" style={{ background: 'var(--bg)' }} aria-pressed={look.board === b.id} onClick={() => setLook({ board: b.id })}>
+            {b.name}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

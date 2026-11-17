@@ -86,3 +86,59 @@ export async function shareExport(json: string, filename: string): Promise<boole
   await Share.share({ title: 'MOA 기록 내보내기', files: [file.uri] });
   return true;
 }
+
+/* ───── 하루 한 번 자동 백업 ───── */
+
+const BACKUP_DIR = 'backups';
+const KEEP = 7;
+const pad = (n: number) => String(n).padStart(2, '0');
+
+/**
+ * 하루에 한 번, 그날의 기록을 backups/moa-YYYY-MM-DD.json으로 남기고 최근 7개만 둔다.
+ * 이 폴더는 안드로이드 자동 백업(구글 계정 백업)에도 같이 올라가서, 폰을 바꾸거나 다시 깔아도 돌아온다.
+ */
+export async function dailyBackup(json: string, now = Date.now()): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    const { Filesystem, Directory, Encoding } = await fs();
+    const d = new Date(now);
+    const name = `moa-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`;
+    let files: string[] = [];
+    try {
+      files = (await Filesystem.readdir({ path: BACKUP_DIR, directory: Directory.Data })).files.map((f) => f.name);
+    } catch {
+      await Filesystem.mkdir({ path: BACKUP_DIR, directory: Directory.Data, recursive: true });
+    }
+    if (files.includes(name)) return;
+    await Filesystem.writeFile({ path: `${BACKUP_DIR}/${name}`, data: json, directory: Directory.Data, encoding: Encoding.UTF8 });
+    const old = [...files, name].filter((f) => /^moa-\d{4}-\d{2}-\d{2}\.json$/.test(f)).sort().slice(0, -KEEP);
+    for (const f of old) await Filesystem.deleteFile({ path: `${BACKUP_DIR}/${f}`, directory: Directory.Data }).catch(() => undefined);
+  } catch {
+    // 백업은 최선 노력: 실패해도 기록은 그대로다.
+  }
+}
+
+/** 남아 있는 자동 백업 목록(새것부터). 앱이 아니면 빈 목록. */
+export async function listBackups(): Promise<string[]> {
+  if (!Capacitor.isNativePlatform()) return [];
+  try {
+    const { Filesystem, Directory } = await fs();
+    return (await Filesystem.readdir({ path: BACKUP_DIR, directory: Directory.Data })).files
+      .map((f) => f.name)
+      .filter((f) => /^moa-\d{4}-\d{2}-\d{2}\.json$/.test(f))
+      .sort()
+      .reverse();
+  } catch {
+    return [];
+  }
+}
+
+export async function readBackup(name: string): Promise<string | null> {
+  try {
+    const { Filesystem, Directory, Encoding } = await fs();
+    const res = await Filesystem.readFile({ path: `${BACKUP_DIR}/${name}`, directory: Directory.Data, encoding: Encoding.UTF8 });
+    return typeof res.data === 'string' ? res.data : null;
+  } catch {
+    return null;
+  }
+}

@@ -173,3 +173,26 @@ export async function aiParse(
     clearTimeout(timer);
   }
 }
+
+/** 큰 일을 3~5개 작은 단계로 나눠 달라고 한다. 실패하면 null. 보내는 것은 할 일 이름 하나뿐이다. */
+export async function aiSteps(apiUrl: string, text: string): Promise<string[] | null> {
+  if (!apiUrl) return null;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 12_000);
+  try {
+    const res = await fetch(`${apiUrl}/v1/steps`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: text.slice(0, 120) }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { steps?: unknown };
+    const steps = Array.isArray(data.steps) ? data.steps.filter((x): x is string => typeof x === 'string' && !!x.trim()).map((x) => x.trim().slice(0, 40)).slice(0, 6) : [];
+    return steps.length ? steps : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}

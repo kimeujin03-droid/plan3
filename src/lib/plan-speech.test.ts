@@ -141,3 +141,16 @@ describe('AI가 돌려준 계획', () => {
     expect(toCommands({ commands: [{ type: 'plan', text: 'y', date: '내일' }] }, acts, now, mon)).toEqual([{ type: 'todo', text: 'y', due: null }]);
   });
 });
+
+describe('반복과 매일 목표', () => {
+  it('매주 화목 9시부터 12시까지 수업 → 화·목 09:00–12:00 반복', () => {
+    expect(p('매주 화목 9시부터 12시까지 수업')).toEqual([{ type: 'series', text: '수업', days: [2, 4], startMin: 540, endMin: 720, activityId: 'class' }]);
+  });
+  it('평일 9시~6시 알바, 매일 7시에 기상', () => {
+    expect(p('평일 9시부터 6시까지 알바')[0]).toMatchObject({ type: 'series', days: [1, 2, 3, 4, 5], startMin: 540, endMin: 1080, activityId: 'job' });
+    expect(p('매일 아침 7시에 기상')[0]).toMatchObject({ type: 'series', days: [0, 1, 2, 3, 4, 5, 6], startMin: 420, endMin: null, text: '기상' });
+  });
+  it('매일 2시간 공부 → 매일 목표', () => {
+    expect(p('매일 2시간 공부')).toEqual([{ type: 'todo', text: '공부 매일 2시간', due: null, minutes: 120, activityId: 'study' }]);
+  });
+});

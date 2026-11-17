@@ -8,6 +8,16 @@ import { moaStorage } from './lib/storage';
 import { childColor, DEFAULT_ACTIVITIES, EXTRA_COLORS, SLEEP_ID } from './lib/palette';
 import { mentionsTime, parse, type Command } from './lib/parser';
 
+/** 단계를 바꾸면 진행도(10칸)와 끝남도 단계에서 다시 계산한다. */
+function withSteps(t: Todo, steps: Todo['steps'] & object): Todo {
+  if (!steps.length) {
+    const { steps: _drop, ...rest } = t;
+    return rest;
+  }
+  const done = steps.filter((s) => s.done).length;
+  return { ...t, steps, progress: Math.round((done / steps.length) * 10), done: done === steps.length };
+}
+
 /** 두 해석이 사실상 같은지(이름 끝의 띄어쓰기 같은 사소한 차이는 무시) */
 function sameCommands(a: Command[], b: Command[]): boolean {
   const key = (cs: Command[]) => JSON.stringify(cs.map((c) => ({ ...c, ...('text' in c ? { text: c.text.replace(/\s+/g, '') } : {}) })));
@@ -30,7 +40,8 @@ function needsAi(cmds: Command[], text: string): boolean {
 import { recordPlanEdit } from './lib/plans';
 import { CELL, dayStart, fmtDue, fmtDur, fmtHM } from './lib/time';
 import { logicalToday } from './lib/day';
-import type { Activity, Data, EraseMode, PaintMode, TimerState, Todo } from './lib/types';
+import { describeSeries, materializeSeries } from './lib/series';
+import type { Activity, Data, EraseMode, Look, PaintMode, Series, TimerState, Todo } from './lib/types';
 
 export interface Reply {
   text: string;
@@ -83,6 +94,20 @@ interface Store extends Data {
   renameActivity: (id: string, name: string) => void;
   setNudge: (on: boolean) => void;
   setPlanAlerts: (on: boolean) => void;
+  setDailyBrief: (on: boolean) => void;
+  setLook: (look: Partial<Look>) => void;
+  /** 반복 일정을 만들고 앞으로 2주치를 바로 채운다. */
+  addSeries: (s: Omit<Series, 'id' | 'skip' | 'createdAt'>) => void;
+  /** 반복을 지운다: 앞으로의 안 한 일정과 그 계획 칠도 같이 지운다. */
+  removeSeries: (id: string) => void;
+  /** 하루가 바뀌면 반복 일정의 새 날을 채운다. */
+  ensureSeries: () => void;
+  /** 할 일에 활동을 이어 둔다(다음에 바로 시작할 수 있게). */
+  linkTodo: (id: string, activityId: string) => void;
+  setSteps: (id: string, steps: string[]) => void;
+  toggleStep: (id: string, index: number) => void;
+  addStep: (id: string, text: string) => void;
+  removeStep: (id: string, index: number) => void;
   /** 10칸 진행도. 10이 되면 끝낸 것으로 친다. */
   setProgress: (id: string, progress: number) => void;
   /** 기분을 1~5로 남긴다. */
@@ -105,10 +130,13 @@ export const emptyData = (): Data => ({
   planVersions: [],
   todos: [],
   cellNotes: [],
+  series: [],
+  look: { accessory: 'none', board: 'sign' },
   timer: null,
   sleeping: false,
   nudge: false,
   planAlerts: true,
+  dailyBrief: true,
   ai: false,
   apiOverride: '',
 });
@@ -123,10 +151,13 @@ export function pickData(s: Data): Data {
     planVersions: s.planVersions,
     todos: s.todos,
     cellNotes: s.cellNotes,
+    series: s.series,
+    look: s.look,
     timer: s.timer,
     sleeping: s.sleeping,
     nudge: s.nudge,
     planAlerts: s.planAlerts,
+    dailyBrief: s.dailyBrief,
     ai: s.ai,
     apiOverride: s.apiOverride,
   };
@@ -187,7 +218,29 @@ export function applyCommand(d: Data, cmd: Command, now: number): string {
       if (target.activityId === SLEEP_ID) d.sleeping = false;
       return `${nameOf(d, target.activityId)} 끝 · ${fmtDur(now - target.start)}`;
     }
+    case 'series': {
+      const s: Series = {
+        id: uid('series'),
+        text: cmd.text.slice(0, 40),
+        activityId: cmd.activityId,
+        days: cmd.days,
+        startMin: cmd.startMin,
+        endMin: cmd.endMin,
+        skip: [],
+        createdAt: now,
+        ...(cmd.place ? { place: cmd.place.slice(0, 20) } : {}),
+      };
+      d.series = [...d.series, s];
+      const out = materializeSeries([s], d.todos, d.intervals, logicalToday(now, d.intervals), now, () => uid('todo'));
+      d.todos = out.todos;
+      d.intervals = out.intervals;
+      return `${describeSeries(s)} "${s.text}" 반복으로 넣었어. 2주치 계획에 칠해뒀어.`;
+    }
     case 'todo': {
+      if (cmd.minutes !== undefined) {
+        d.todos = [...d.todos, { id: uid('todo'), text: cmd.text.slice(0, 80), due: null, done: false, doneAt: null, createdAt: now, type: 'hours', minutes: cmd.minutes, ...(cmd.activityId ? { activityId: cmd.activityId } : {}) }];
+        return `"${cmd.text}" 매일 목표로 넣었어. 한 만큼 막대가 차.`;
+      }
       const todo: Todo = { id: uid('todo'), text: cmd.text.slice(0, 80), due: cmd.due, done: false, doneAt: null, createdAt: now, ...(cmd.place ? { place: cmd.place.slice(0, 20) } : {}) };
       if (cmd.due === null) {
         d.todos = [...d.todos, todo];
@@ -468,7 +521,10 @@ export const useStore = create<Store>()(
 
       removeTodo: (id) => {
         const before = pickData(get());
-        set({ todos: before.todos.filter((t) => t.id !== id), undoData: before, lastReply: { text: '할 일을 지웠어.', at: Date.now(), undo: true } });
+        const t = before.todos.find((x) => x.id === id);
+        // 반복 일정의 하루를 지웠으면 그날은 다시 만들지 않는다.
+        const series = t?.seriesId && t.due !== null ? before.series.map((s) => (s.id === t.seriesId ? { ...s, skip: [...s.skip, t.due!] } : s)) : before.series;
+        set({ todos: before.todos.filter((x) => x.id !== id), series, undoData: before, lastReply: { text: '할 일을 지웠어.', at: Date.now(), undo: true } });
       },
 
       removeInterval: (id) => {
@@ -565,6 +621,68 @@ export const useStore = create<Store>()(
 
       setPlanAlerts: (on) => set({ planAlerts: on }),
 
+      setDailyBrief: (on) => set({ dailyBrief: on }),
+
+      setLook: (look) => set({ look: { ...get().look, ...look } }),
+
+      addSeries: (input) => {
+        const now = Date.now();
+        const s: Series = { ...input, id: uid('series'), skip: [], createdAt: now };
+        const cur = get();
+        const series = [...cur.series, s];
+        const out = materializeSeries([s], cur.todos, cur.intervals, logicalToday(now, cur.intervals), now, () => uid('todo'));
+        set({ series, todos: out.todos, intervals: out.intervals });
+      },
+
+      removeSeries: (id) => {
+        const now = Date.now();
+        const before = pickData(get());
+        const gone = before.todos.filter((t) => t.seriesId === id && !t.done && (t.end ?? t.start ?? 0) > now);
+        let intervals = before.intervals;
+        for (const t of gone) if (t.start !== undefined && t.end !== undefined) intervals = subtract(intervals, t.start, t.end, (iv) => iv.kind === 'plan' && iv.activityId === t.activityId, now);
+        set({
+          series: before.series.filter((s) => s.id !== id),
+          todos: before.todos.filter((t) => !gone.includes(t)),
+          intervals,
+          undoData: before,
+          lastReply: { text: '반복 일정을 지웠어.', at: now, undo: true },
+        });
+      },
+
+      ensureSeries: () => {
+        const cur = get();
+        if (!cur.series.length) return;
+        const now = Date.now();
+        const out = materializeSeries(cur.series, cur.todos, cur.intervals, logicalToday(now, cur.intervals), now, () => uid('todo'));
+        if (out.todos !== cur.todos) set({ todos: out.todos, intervals: out.intervals });
+      },
+
+      linkTodo: (id, activityId) => set({ todos: get().todos.map((t) => (t.id === id ? { ...t, activityId } : t)) }),
+
+      setSteps: (id, steps) =>
+        set({ todos: get().todos.map((t) => (t.id === id ? withSteps(t, steps.map((text) => ({ text: text.slice(0, 40), done: false }))) : t)) }),
+
+      toggleStep: (id, index) => {
+        const now = Date.now();
+        let finished = false;
+        const todos = get().todos.map((t) => {
+          if (t.id !== id || !t.steps?.[index]) return t;
+          const next = withSteps(t, t.steps.map((st, i) => (i === index ? { ...st, done: !st.done } : st)));
+          finished = next.done && !t.done;
+          return { ...next, doneAt: next.done ? t.doneAt ?? now : null };
+        });
+        set(finished ? { todos, cheerAt: now, lastReply: { text: '단계 다 끝! 수고했어.', at: now } } : { todos });
+      },
+
+      addStep: (id, text) => {
+        const s = text.trim().slice(0, 40);
+        if (!s) return;
+        set({ todos: get().todos.map((t) => (t.id === id ? withSteps(t, [...(t.steps ?? []), { text: s, done: false }]) : t)) });
+      },
+
+      removeStep: (id, index) =>
+        set({ todos: get().todos.map((t) => (t.id === id && t.steps ? withSteps(t, t.steps.filter((_, i) => i !== index)) : t)) }),
+
       setProgress: (id, progress) => {
         const now = Date.now();
         const p = Math.max(0, Math.min(10, Math.round(progress)));
@@ -622,6 +740,9 @@ export const useStore = create<Store>()(
             sleeping: intervals.some((iv) => iv.activityId === SLEEP_ID && iv.end === null),
             nudge: cur.nudge,
             planAlerts: cur.planAlerts,
+            dailyBrief: cur.dailyBrief,
+            look: cur.look,
+            series: arr(p.series).filter((x) => x && typeof x.id === 'string' && Array.isArray(x.days) && Number.isFinite(x.startMin)),
             ai: cur.ai,
             apiOverride: cur.apiOverride,
             undoData: pickData(cur),

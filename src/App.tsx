@@ -3,6 +3,7 @@ import { Component, useEffect, useRef, useState, type ReactNode } from 'react';
 import { InputBar, RunningBar, Toast, useNow } from './components/common';
 import { Icon } from './components/Icons';
 import { reschedulePlanAlerts } from './lib/notify';
+import { dailyBackup } from './lib/storage';
 import { Moa } from './components/Moa';
 import { activeIntervals } from './lib/intervals';
 import { flushStorage } from './lib/storage';
@@ -11,7 +12,7 @@ import { Home } from './screens/Home';
 import { Settings } from './screens/Settings';
 import { Record } from './screens/Record';
 import { Todos } from './screens/Todos';
-import { useStore } from './store';
+import { useStore, pickData } from './store';
 
 type Tab = 'home' | 'record' | 'todos' | 'clock';
 type Overlay = 'settings' | null;
@@ -70,11 +71,23 @@ function Shell() {
 
   // 계획이 바뀌면 알림을 다시 맞춘다(잠깐 기다렸다가 한 번만).
   const todos = useStore((s) => s.todos);
+  const intervals = useStore((s) => s.intervals);
+  const activities = useStore((s) => s.activities);
   const planAlertsOn = useStore((s) => s.planAlerts);
+  const brief = useStore((s) => s.dailyBrief);
   useEffect(() => {
-    const t = setTimeout(() => void reschedulePlanAlerts(todos, planAlertsOn), 800);
+    const t = setTimeout(() => void reschedulePlanAlerts(todos, planAlertsOn, { intervals, activities, brief }), 1500);
     return () => clearTimeout(t);
-  }, [todos, planAlertsOn]);
+  }, [todos, intervals, activities, planAlertsOn, brief]);
+
+  // 하루가 바뀌면 반복 일정의 새 날을 채운다.
+  const ensureSeries = useStore((s) => s.ensureSeries);
+  const dayKey = new Date(now).toDateString();
+  useEffect(() => {
+    ensureSeries();
+    // 하루에 한 번 자동 백업(최근 7일). 안드로이드 자동 백업이 이 폴더도 구글 계정에 올린다.
+    void dailyBackup(JSON.stringify(pickData(useStore.getState())));
+  }, [dayKey, ensureSeries]);
 
   // 글자를 치는 동안은 하단 탭을 숨겨 입력창이 키보드 바로 위에 오게 한다.
   const [typing, setTyping] = useState(false);

@@ -8,7 +8,9 @@ export type Command =
    * 계획·할 일에 넣기. due는 그날 0시(없으면 null).
    * start와 end가 있으면 "몇 시~몇 시", start만 있으면 "몇 시에".
    */
-  | { type: 'todo'; text: string; due: number | null; start?: number; end?: number; activityId?: string | null; deadline?: boolean; dueAt?: number; place?: string }
+  | { type: 'todo'; text: string; due: number | null; start?: number; end?: number; activityId?: string | null; deadline?: boolean; dueAt?: number; place?: string; minutes?: number }
+  /** 반복 일정: 요일 0(일)~6(토), 하루 안의 분 */
+  | { type: 'series'; text: string; days: number[]; startMin: number; endMin: number | null; activityId: string | null; place?: string }
   | { type: 'backfill'; name: string; activityId: string | null; start: number; end: number }
   | { type: 'sleep' }
   | { type: 'wake' }
@@ -205,6 +207,44 @@ function parsePlan(t: string, activities: Activity[], today: number): Command | 
   return { ...cmd, text, place, ...(cmd.activityId === undefined ? {} : { activityId: matchActivity(text, activities)?.id ?? cmd.activityId }) };
 }
 
+/**
+ * 반복: "매주 화목 9시부터 12시까지 수업", "평일 9시~6시 알바", "매일 7시에 기상", "매일 2시간 공부".
+ * 시각이 있으면 반복 일정, 시간 양만 있으면 매일 목표.
+ */
+function parseRepeat(t: string, activities: Activity[]): Command | null {
+  const m = t.replace(CALL, '').match(/^(매일|평일|주말|매주\s*((?:[일월화수목금토](?:요일)?[\s,·/와과랑]*)+))\s*(.*)$/);
+  if (!m) return null;
+  let days: number[];
+  if (m[1] === '매일') days = [0, 1, 2, 3, 4, 5, 6];
+  else if (m[1] === '평일') days = [1, 2, 3, 4, 5];
+  else if (m[1] === '주말') days = [0, 6];
+  else days = [...new Set([...m[2].replace(/요일/g, '')].filter((c) => DOW.includes(c)).map((c) => DOW.indexOf(c)))].sort();
+  if (!days.length) return null;
+  const rest = m[3];
+  const span = readSpan(rest, true);
+  if (span) {
+    const named = splitPlace(planText(span.rest));
+    if (!named.text) return null;
+    return {
+      type: 'series',
+      text: named.text,
+      days,
+      startMin: span.start,
+      endMin: span.end,
+      activityId: matchActivity(named.text, activities)?.id ?? null,
+      ...(named.place ? { place: named.place } : {}),
+    };
+  }
+  const hours = rest.match(HOURS);
+  if (hours && m[1] === '매일') {
+    const what = planText(`${rest.slice(0, hours.index)} ${rest.slice(hours.index! + hours[0].length)}`);
+    const minutes = Math.round((Number(hours[1]) * 60 + Number(hours[2] ?? 0)));
+    const act = matchActivity(what, activities);
+    if (what && minutes > 0) return { type: 'todo', text: `${what} 매일 ${hours[1]}시간${hours[2] ? ` ${hours[2]}분` : ''}`, due: null, minutes, activityId: act?.id ?? null };
+  }
+  return null;
+}
+
 const INTENT = /(.*?)\s*(해야지|해야\s*하는데|해야\s*되는데|해야\s*돼|해야\s*해|해야겠다|써야지|써야\s*하는데|써야\s*되는데|써야\s*돼|써야겠다)/;
 const MOOD = /(하기\s*싫|귀찮|피곤|힘들|졸려|기분이?\s*(아냐|아니|별로))/;
 const END = /(끝났|끝냈|끝낼|끝!|끝$|그만|다\s*했|마쳤|종료)/;
@@ -224,6 +264,9 @@ export function parse(text: string, activities: Activity[], now: number, today: 
   if (focus) return [{ type: 'focus', value: Math.min(5, Math.max(1, Number(focus[1]))) }];
   const fatigue = t.match(/피로도?\s*(\d{1,3})/);
   if (fatigue) return [{ type: 'fatigue', value: Math.min(100, Number(fatigue[1])) }];
+
+  const repeat = parseRepeat(t, activities);
+  if (repeat) return [repeat];
 
   const plan = parsePlan(t, activities, today);
   if (plan) return [plan];
