@@ -19,6 +19,7 @@ interface WireCommand {
   date?: unknown;
   when?: unknown;
   until?: unknown;
+  place?: unknown;
 }
 
 const str = (v: unknown, max: number): string => (typeof v === 'string' ? v.trim().slice(0, max) : '');
@@ -61,23 +62,25 @@ export function toCommands(wire: unknown, activities: Activity[], now: number, t
         const dm = typeof raw.date === 'string' ? raw.date.match(/^(\d{4})-(\d{2})-(\d{2})$/) : null;
         // 날짜 계산은 모델보다 앱이 정확하다: 사용자가 한 날짜 말("내일", "금요일")을 앱이 직접 푼다.
         const spoken = typeof raw.when === 'string' ? resolveDayWord(raw.when, today) : null;
+        const place = str(raw.place, 20);
+        const at = place ? { place } : {};
         if (!text) break;
         // 날짜를 못 받았으면 버리지 않고 기한 없는 계획으로 남긴다.
         if (spoken === null && !dm) {
-          out.push({ type: 'todo', text, due: null });
+          out.push({ type: 'todo', text, due: null, ...at });
           break;
         }
         const due = spoken ?? new Date(Number(dm![1]), Number(dm![2]) - 1, Number(dm![3])).getTime();
         if (!(due >= today && due <= addDays(today, 366))) break;
         const start = clock(raw.start, due);
         let end = clock(raw.end, due);
-        if (raw.until === true) out.push(start === null ? { type: 'todo', text, due, deadline: true } : { type: 'todo', text, due, deadline: true, dueAt: start });
-        else if (start === null) out.push({ type: 'todo', text, due });
-        else if (end === null) out.push({ type: 'todo', text, due, start, activityId: act?.id ?? null });
+        if (raw.until === true) out.push(start === null ? { type: 'todo', text, due, deadline: true, ...at } : { type: 'todo', text, due, deadline: true, dueAt: start, ...at });
+        else if (start === null) out.push({ type: 'todo', text, due, ...at });
+        else if (end === null) out.push({ type: 'todo', text, due, start, activityId: act?.id ?? null, ...at });
         else {
           if (end <= start) end += 24 * HOUR;
           if (end - start > 16 * HOUR) break;
-          out.push({ type: 'todo', text, due, start, end, activityId: act?.id ?? null });
+          out.push({ type: 'todo', text, due, start, end, activityId: act?.id ?? null, ...at });
         }
         break;
       }

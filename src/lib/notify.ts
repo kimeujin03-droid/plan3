@@ -56,8 +56,124 @@ export async function scheduleTimerAlert(at: number | null, body = ''): Promise<
     if (at === null || at <= Date.now()) return;
     const perm = await ln.checkPermissions();
     if (perm.display !== 'granted' && (await ln.requestPermissions()).display !== 'granted') return;
-    await ln.schedule({ notifications: [{ id: TIMER_ID, title: '모아', body, schedule: { at: new Date(at), allowWhileIdle: true } }] });
+    await ensureChannel(ln);
+    await ln.schedule({ notifications: [{ id: TIMER_ID, title: '모아', body, channelId: CHANNEL, schedule: { at: new Date(at), allowWhileIdle: true } }] });
   } catch {
     // 알림이 안 와도 화면의 타이머는 그대로 돈다.
+  }
+}
+
+/* ───── 계획 알림 ───── */
+
+const CHANNEL = 'moa-plan';
+const PLAN_BASE = 1000;
+const PLAN_MAX = 60;
+let channelReady = false;
+
+async function ensureChannel(ln: Awaited<ReturnType<typeof plugin>>): Promise<void> {
+  if (!ln || channelReady) return;
+  try {
+    // 소리와 진동이 있고 화면 위로 뜨는 채널. 안드로이드 8 이상에서만 의미가 있다.
+    await ln.createChannel({ id: CHANNEL, name: '계획 알림', description: '약속 1시간 전, 마감 전 알림', importance: 5, visibility: 1, vibration: true });
+  } catch {
+    /* 채널을 못 만들면 기본 채널로 간다 */
+  }
+  channelReady = true;
+}
+
+export interface PlanAlert {
+  at: number;
+  title: string;
+  body: string;
+}
+
+interface PlanLike {
+  id: string;
+  text: string;
+  done: boolean;
+  due: number | null;
+  start?: number;
+  dueAt?: number;
+  type?: string;
+}
+
+const HM = (ms: number) => {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+
+/**
+ * 계획마다 언제 알릴지 정한다. 순수 함수라 테스트할 수 있다.
+ * - 시각이 있는 일: 1시간 전, 10분 전
+ * - 마감 시각까지 정한 마감: 하루 전, 3시간 전, 1시간 전
+ * - 날짜만 정한 마감: 전날 저녁 9시, 그날 아침 9시
+ */
+export function planAlerts(todos: PlanLike[], now: number): PlanAlert[] {
+  const out: PlanAlert[] = [];
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  for (const t of todos) {
+    if (t.done || t.type === 'hours') continue;
+    if (t.start !== undefined && t.dueAt === undefined) {
+      out.push({ at: t.start - 60 * 60_000, title: `1시간 뒤 · ${t.text}`, body: `${HM(t.start)}에 시작해. 미리 준비하자.` });
+      out.push({ at: t.start - 10 * 60_000, title: `10분 뒤 · ${t.text}`, body: '슬슬 일어나서 움직일 시간!' });
+    } else if (t.dueAt !== undefined) {
+      out.push({ at: t.dueAt - DAY_MS, title: `내일 ${HM(t.dueAt)}까지 · ${t.text}`, body: '하루 남았어. 오늘 조금만 해둘까?' });
+      out.push({ at: t.dueAt - 3 * 60 * 60_000, title: `3시간 남음 · ${t.text}`, body: `${HM(t.dueAt)}까지야.` });
+      out.push({ at: t.dueAt - 60 * 60_000, title: `1시간 남음 · ${t.text}`, body: `${HM(t.dueAt)} 마감. 지금 시작하면 돼!` });
+    } else if (t.due !== null) {
+      out.push({ at: t.due - 3 * 60 * 60_000, title: `내일까지 · ${t.text}`, body: '내일이 마감이야.' });
+      out.push({ at: t.due + 9 * 60 * 60_000, title: `오늘까지 · ${t.text}`, body: '오늘이 마감이야. 할 수 있어!' });
+    }
+  }
+  return out.filter((a) => a.at > now + 30_000).sort((a, b) => a.at - b.at).slice(0, PLAN_MAX);
+}
+
+/** 계획 알림을 모두 지우고 다시 맞춘다. 계획이 바뀔 때마다 부른다. */
+export async function reschedulePlanAlerts(todos: PlanLike[], enabled: boolean): Promise<void> {
+  try {
+    const ln = await plugin();
+    if (!ln) return;
+    const pending = await ln.getPending();
+    const old = pending.notifications.filter((n) => n.id >= PLAN_BASE && n.id < PLAN_BASE + 1000).map((n) => ({ id: n.id }));
+    if (old.length) await ln.cancel({ notifications: old });
+    if (!enabled) return;
+    const alerts = planAlerts(todos, Date.now());
+    if (!alerts.length) return;
+    const perm = await ln.checkPermissions();
+    if (perm.display !== 'granted' && (await ln.requestPermissions()).display !== 'granted') return;
+    await ensureChannel(ln);
+    await ln.schedule({
+      notifications: alerts.map((a, i) => ({
+        id: PLAN_BASE + i,
+        title: a.title,
+        body: a.body,
+        channelId: CHANNEL,
+        schedule: { at: new Date(a.at), allowWhileIdle: true },
+      })),
+    });
+  } catch {
+    // 알림은 최선 노력: 실패해도 계획은 그대로다.
+  }
+}
+
+/** 정확한 시각에 울릴 수 있는지(안드로이드 12+). 웹이면 null. */
+export async function exactAlarmStatus(): Promise<'granted' | 'denied' | null> {
+  try {
+    const ln = await plugin();
+    if (!ln) return null;
+    const r = await ln.checkExactNotificationSetting();
+    return r.exact_alarm === 'granted' ? 'granted' : 'denied';
+  } catch {
+    return null;
+  }
+}
+
+/** 정확한 알람 설정 화면을 연다. */
+export async function openExactAlarmSetting(): Promise<void> {
+  try {
+    const ln = await plugin();
+    await ln?.changeExactNotificationSetting();
+  } catch {
+    /* 지원하지 않는 기기 */
   }
 }

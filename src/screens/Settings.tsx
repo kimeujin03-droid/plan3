@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import pkg from '../../package.json';
 import { DEFAULT_API } from '../lib/ai';
-import { requestNudgePermission } from '../lib/notify';
+import { exactAlarmStatus, openExactAlarmSetting, requestNudgePermission } from '../lib/notify';
 import { SLEEP_ID } from '../lib/palette';
 import { shareExport } from '../lib/storage';
 import { pickData, useStore } from '../store';
@@ -193,6 +193,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
           )}
         </div>
 
+        <PlanAlertCard />
+
         <div className="card">
           <div className="row between">
             <div className="grow">
@@ -260,6 +262,46 @@ export function Settings({ onClose }: { onClose: () => void }) {
           </a>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** 계획 알림 켜고 끄기, 그리고 알림이 늦게 올 때 정확한 알람 허용으로 보내기 */
+function PlanAlertCard() {
+  const on = useStore((s) => s.planAlerts);
+  const set = useStore((s) => s.setPlanAlerts);
+  const [exact, setExact] = useState<'granted' | 'denied' | null>(null);
+  useEffect(() => {
+    const check = () => void exactAlarmStatus().then(setExact);
+    check();
+    // 설정 화면에 갔다 오면 다시 확인한다.
+    window.addEventListener('focus', check);
+    document.addEventListener('visibilitychange', check);
+    return () => {
+      window.removeEventListener('focus', check);
+      document.removeEventListener('visibilitychange', check);
+    };
+  }, []);
+  return (
+    <div className="card">
+      <div className="row between">
+        <div className="grow">
+          <div className="h2">계획 알림</div>
+          <div className="sub">시간 정한 일은 1시간 전·10분 전, 마감은 하루 전·3시간 전·1시간 전에 알려줘.</div>
+        </div>
+        <Switch on={on} label="계획 알림" onToggle={() => set(!on)} />
+      </div>
+      {on && exact === 'denied' && (
+        <div className="row" style={{ gap: 8, background: 'var(--bg)', borderRadius: 16, padding: '10px 12px' }}>
+          <div className="grow sub" style={{ fontSize: 13 }}>
+            지금은 폰이 알림을 몇 분 늦출 수 있어. &lsquo;알람 및 리마인더&rsquo;를 허용하면 정확한 시각에 울려.
+          </div>
+          <button className="pill ink" onClick={() => void openExactAlarmSetting()}>
+            허용하러 가기
+          </button>
+        </div>
+      )}
+      {on && exact === 'granted' && <div className="sub" style={{ fontSize: 13 }}>정확한 시각에 울리도록 허용돼 있어.</div>}
     </div>
   );
 }

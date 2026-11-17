@@ -34,5 +34,4 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- "먼저 말 걸기" 알림은 분 단위로 정확할 필요가 없다. 정확 알람 권한은 빼서 권한을 최소로 둔다. -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" tools:node="remove" />
 </manifest>

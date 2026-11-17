@@ -2,6 +2,7 @@ import { Capacitor } from '@capacitor/core';
 import { Component, useEffect, useRef, useState, type ReactNode } from 'react';
 import { InputBar, RunningBar, Toast, useNow } from './components/common';
 import { Icon } from './components/Icons';
+import { reschedulePlanAlerts } from './lib/notify';
 import { Moa } from './components/Moa';
 import { activeIntervals } from './lib/intervals';
 import { flushStorage } from './lib/storage';
@@ -66,6 +67,14 @@ function Shell() {
   const tickTimer = useStore((s) => s.tickTimer);
   const now = useNow(running || hasTimer ? 1000 : 20_000);
   useEffect(() => tickTimer(now), [now, tickTimer]);
+
+  // 계획이 바뀌면 알림을 다시 맞춘다(잠깐 기다렸다가 한 번만).
+  const todos = useStore((s) => s.todos);
+  const planAlertsOn = useStore((s) => s.planAlerts);
+  useEffect(() => {
+    const t = setTimeout(() => void reschedulePlanAlerts(todos, planAlertsOn), 800);
+    return () => clearTimeout(t);
+  }, [todos, planAlertsOn]);
 
   // 글자를 치는 동안은 하단 탭을 숨겨 입력창이 키보드 바로 위에 오게 한다.
   const [typing, setTyping] = useState(false);

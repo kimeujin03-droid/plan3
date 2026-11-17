@@ -25,7 +25,7 @@ describe('앞날의 일은 계획으로 알아듣는다', () => {
   });
 
   it('내일 저녁 10시에 … → 내일 22:00', () => {
-    expect(p('나 내일 저녁 10시에 남친집에감')).toEqual([{ type: 'todo', text: '남친집에 가기', due: mon + DAY, start: mon + DAY + 22 * HOUR, activityId: null }]);
+    expect(p('나 내일 저녁 10시에 남친집에감')).toEqual([{ type: 'todo', text: '남친집에 가기', due: mon + DAY, start: mon + DAY + 22 * HOUR, activityId: null, place: '남친집' }]);
   });
 
   it('내일은 2시간 공부 → 내일 날짜의 계획 (2시를 시각으로 읽지 않는다)', () => {
@@ -96,6 +96,14 @@ describe('마감 시각', () => {
     expect(resolveDayWord('내일', mon)).toBe(mon + DAY);
     expect(resolveDayWord('다음 주 화요일', mon)).toBe(mon + 8 * DAY);
     expect(resolveDayWord('주말', mon)).toBeNull();
+  });
+});
+
+describe('장소', () => {
+  it('"~에서"와 "~ 가기"에서 장소를 뽑는다', () => {
+    expect(p('토요일 2시에 다이소에서 수납함 사기 할거야')[0]).toMatchObject({ text: '수납함 사기', place: '다이소', start: mon + 5 * DAY + 14 * HOUR });
+    expect(p('내일 9시에 학교 가야 돼')[0]).toMatchObject({ place: '학교', start: mon + DAY + 9 * HOUR });
+    expect(p('내일 도서관에서 공부 3시부터 6시까지')[0]).toMatchObject({ text: '공부', place: '도서관', activityId: 'study' });
   });
 });
 

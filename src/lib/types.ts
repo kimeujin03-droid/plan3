@@ -57,6 +57,8 @@ export interface Todo {
   dueAt?: number;
   /** 얼마나 했는지 0~10 (10칸) */
   progress?: number;
+  /** 장소: 학교, 마트, 다이소… */
+  place?: string;
   /** range·hours: 어느 활동인지 */
   activityId?: string;
 }

@@ -8,7 +8,7 @@ export type Command =
    * 계획·할 일에 넣기. due는 그날 0시(없으면 null).
    * start와 end가 있으면 "몇 시~몇 시", start만 있으면 "몇 시에".
    */
-  | { type: 'todo'; text: string; due: number | null; start?: number; end?: number; activityId?: string | null; deadline?: boolean; dueAt?: number }
+  | { type: 'todo'; text: string; due: number | null; start?: number; end?: number; activityId?: string | null; deadline?: boolean; dueAt?: number; place?: string }
   | { type: 'backfill'; name: string; activityId: string | null; start: number; end: number }
   | { type: 'sleep' }
   | { type: 'wake' }
@@ -147,7 +147,7 @@ function planText(s: string): string {
  * 앞날의 일: "내일 오후 8시부터 10시까지 공부할 거야", "금요일까지인 과제가 있어", "내일은 2시간 공부".
  * 날짜를 가리키는 말이 있고, 지난 일을 말하는 게 아닐 때만 계획으로 본다.
  */
-function parsePlan(t: string, activities: Activity[], today: number): Command | null {
+function parsePlanBare(t: string, activities: Activity[], today: number): Command | null {
   const body = t.replace(CALL, '');
   const dm = body.match(DAYWORD);
   if (!dm) return null;
@@ -186,6 +186,23 @@ function parsePlan(t: string, activities: Activity[], today: number): Command | 
   // 시각도 기한도 없으면, 앞으로 하겠다는 말일 때만 계획으로 본다.
   const text = FUTURE.test(body) ? planText(rest) : '';
   return text ? { type: 'todo', text, due: day } : null;
+}
+
+/** "다이소에서 장보기" → 장소 "다이소", "학교 가기" → "학교". 장소를 못 찾으면 그대로. */
+export function splitPlace(text: string): { text: string; place?: string } {
+  const at = text.match(/^(.*?)(\S{1,12})에서\s*(.+)$/);
+  if (at && at[3].trim()) return { text: `${at[1]}${at[3]}`.trim(), place: at[2] };
+  const go = text.match(/^(.*?)(\S{1,12}?)(?:에)?\s*가기$/);
+  if (go && go[2] && !/^(같이|빨리|먼저|일찍|놀러)$/.test(go[2])) return { text: text, place: go[2].replace(/(에|으로|로)$/, '') };
+  return { text };
+}
+
+function parsePlan(t: string, activities: Activity[], today: number): Command | null {
+  const cmd = parsePlanBare(t, activities, today);
+  if (!cmd || cmd.type !== 'todo') return cmd;
+  const { text, place } = splitPlace(cmd.text);
+  if (!place || !text) return cmd;
+  return { ...cmd, text, place, ...(cmd.activityId === undefined ? {} : { activityId: matchActivity(text, activities)?.id ?? cmd.activityId }) };
 }
 
 const INTENT = /(.*?)\s*(해야지|해야\s*하는데|해야\s*되는데|해야\s*돼|해야\s*해|해야겠다|써야지|써야\s*하는데|써야\s*되는데|써야\s*돼|써야겠다)/;

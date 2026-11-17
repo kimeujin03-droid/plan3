@@ -182,7 +182,7 @@ export function applyCommand(d: Data, cmd: Command, now: number): string {
       return `${nameOf(d, target.activityId)} 끝 · ${fmtDur(now - target.start)}`;
     }
     case 'todo': {
-      const todo: Todo = { id: uid('todo'), text: cmd.text.slice(0, 80), due: cmd.due, done: false, doneAt: null, createdAt: now };
+      const todo: Todo = { id: uid('todo'), text: cmd.text.slice(0, 80), due: cmd.due, done: false, doneAt: null, createdAt: now, ...(cmd.place ? { place: cmd.place.slice(0, 20) } : {}) };
       if (cmd.due === null) {
         d.todos = [...d.todos, todo];
         return `"${cmd.text}" 계획에 넣어뒀어.`;
@@ -199,7 +199,7 @@ export function applyCommand(d: Data, cmd: Command, now: number): string {
       }
       if (cmd.end === undefined) {
         d.todos = [...d.todos, { ...todo, start: cmd.start }];
-        return `${when} ${fmtHM(cmd.start)}에 "${cmd.text}" 넣어뒀어.`;
+        return `${when} ${fmtHM(cmd.start)}에 "${cmd.text}"${cmd.place ? ` @${cmd.place}` : ''} 넣어뒀어.`;
       }
       d.todos = [...d.todos, { ...todo, type: 'range', start: cmd.start, end: cmd.end, ...(cmd.activityId ? { activityId: cmd.activityId } : {}) }];
       if (cmd.activityId) {
@@ -207,7 +207,7 @@ export function applyCommand(d: Data, cmd: Command, now: number): string {
         d.intervals = subtract(d.intervals, cmd.start, cmd.end, (iv) => iv.kind === 'plan', now);
         d.intervals = mergeAdd(d.intervals, { activityId: cmd.activityId, kind: 'plan', start: cmd.start, end: cmd.end, source: 'chat' });
       }
-      return `${when} ${fmtHM(cmd.start)}–${fmtHM(cmd.end)} "${cmd.text}" 계획으로 넣었어.`;
+      return `${when} ${fmtHM(cmd.start)}–${fmtHM(cmd.end)} "${cmd.text}"${cmd.place ? ` @${cmd.place}` : ''} 계획으로 넣었어.`;
     }
     case 'backfill': {
       const act = ensureActivity(d, cmd.name, cmd.activityId);
