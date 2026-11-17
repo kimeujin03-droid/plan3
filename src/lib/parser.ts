@@ -8,7 +8,7 @@ export type Command =
    * 계획·할 일에 넣기. due는 그날 0시(없으면 null).
    * start와 end가 있으면 "몇 시~몇 시", start만 있으면 "몇 시에".
    */
-  | { type: 'todo'; text: string; due: number | null; start?: number; end?: number; activityId?: string | null }
+  | { type: 'todo'; text: string; due: number | null; start?: number; end?: number; activityId?: string | null; deadline?: boolean }
   | { type: 'backfill'; name: string; activityId: string | null; start: number; end: number }
   | { type: 'sleep' }
   | { type: 'wake' }
@@ -73,7 +73,8 @@ function readSpan(text: string, guessPm: boolean): Span | null {
     const start = minutesOf(r[1], r[2], r[3], r[4], guessPm);
     let end = minutesOf(r[5] ?? (Number(r[6]) <= 12 && start >= 12 * 60 ? '오후' : undefined), r[6], r[7], r[8], false);
     if (end <= start && end + 12 * 60 <= 24 * 60) end += 12 * 60;
-    if (end > start) return { start, end, rest: r[9] };
+    // 시각 앞에 있던 말("알바가 9시부터…")도 이름의 일부다.
+    if (end > start) return { start, end, rest: `${text.slice(0, r.index)} ${r[9]}`.trim() };
   }
   const p = text.match(POINT);
   if (p) return { start: minutesOf(p[1], p[2], p[3], p[4], guessPm), end: null, rest: `${text.slice(0, p.index)} ${p[5]}` };
@@ -108,18 +109,35 @@ function resolveDay(m: RegExpMatchArray, today: number): number {
 }
 
 const PAST = /(했어|했음|했다|했지|했네|갔어|갔다|봤어|먹었|였어|었어|았어)/;
-const FUTURE = /(할\s*거|할게|할래|할\s*예정|할\s*듯|해야|갈\s*거|갈게|가야|있어|있음|있다|약속|예정|마감|까지|감$|가$|함$)/;
+const FUTURE = /(거야|거여|거임|ㄹ게|할게|할래|할까|볼까|볼게|려고|예정|할\s*듯|해야|갈게|가야|있어|있음|있다|약속|마감|까지|감$|가$|함$)/;
 
 /** 계획 문장의 꼬리("할 거야", "해야지", "가 있어")를 떼고 이름만 남긴다. */
+const JONG_RIEUL = 8;
+/** "일어날거여" → "일어나기", "먹을 거야" → "먹기", "가려고" → "가기": 앞날을 말하는 어미를 떼고 명사형으로. */
+function verbToNoun(s: string): string {
+  const m = s.match(/([가-힣])\s*(거예요|거야|거여|거임|거|게요|게|래요|래|까요|까|려고|예정이야|예정)$/);
+  if (!m) return s;
+  const head = s.slice(0, m.index);
+  const ch = m[1];
+  if (m[2] === '려고') return `${head}${ch}기`;
+  if (ch === '을') return `${head}기`;
+  const code = ch.charCodeAt(0) - 0xac00;
+  if (code >= 0 && code % 28 === JONG_RIEUL) return `${head}${String.fromCharCode(ch.charCodeAt(0) - JONG_RIEUL)}기`;
+  return s;
+}
+
 function planText(s: string): string {
   let out = s
     .trim()
-    .replace(/[.!~…]+$/g, '')
+    .replace(/[.!~…?]+$/g, '')
     .replace(/\s+/g, ' ')
+    .replace(/\s*(을|를)?\s*(해\s*볼까|해\s*볼게|해\s*보려고|해\s*볼래|하려고|할까|할까봐)$/, '');
+  out = verbToNoun(out)
     .replace(/\s*(이|가)?\s*(있어요?|있음|있다)$/, '')
     .replace(/\s*(을|를)?\s*(할\s*거야|할\s*거임|할\s*거|할게|할래|할\s*예정이야|할\s*예정|할\s*듯|해야지|해야\s*하는데|해야\s*되는데|해야\s*돼|해야\s*해|해야\s*함|해야겠다|하기|제출|내기|함)$/, '')
     .replace(/에\s*(감|갈\s*거야|갈게|가야\s*해|가야\s*돼|가야지|가)$/, '에 가기')
     .replace(/\s*(갈\s*거야|갈게|가야\s*해|가야\s*돼|가야지)$/, ' 가기')
+    .replace(/(\S)\s*하기$/, '$1')
     .trim();
   out = out.replace(CALL, '').replace(/(을|를|은|는|이|가|도)$/, '').trim();
   return out;
@@ -140,7 +158,7 @@ function parsePlan(t: string, activities: Activity[], today: number): Command | 
 
   if (deadline) {
     const text = planText(rest);
-    return text ? { type: 'todo', text, due: day } : null;
+    return text ? { type: 'todo', text, due: day, deadline: true } : null;
   }
   const span = readSpan(rest, true);
   if (span) {
@@ -190,7 +208,8 @@ export function parse(text: string, activities: Activity[], now: number, today: 
   // 지난 시간 채우기: "9시부터 10시 반까지 공부했어". 달력의 오늘 기준.
   const body = t.replace(CALL, '').replace(/^오늘\s*/, '');
   const r = body.match(RANGE);
-  if (r) {
+  // "내일 …부터 …까지"는 지난 기록이 아니다. 계획으로 못 읽었으면 아래(메모)로 보낸다.
+  if (r && !/(내일|모레|글피|다음\s*주|요일)/.test(body)) {
     const span = readSpan(body, false);
     const rest = span ? clean(span.rest.replace(/(했어|했음|함|했다|했지|갔어|봤어)$/, '')) : '';
     if (span && span.end !== null && rest) {
@@ -218,4 +237,9 @@ export function parse(text: string, activities: Activity[], now: number, today: 
   }
 
   return [{ type: 'memo', text: t }];
+}
+
+/** 날짜·시각을 말하는 문장인지. 이런 문장은 AI가 더 잘 읽는다. */
+export function mentionsTime(text: string): boolean {
+  return /\d|오늘|내일|모레|글피|요일|주말|다음\s*주|이번\s*주|까지|아침|저녁|밤|새벽|오전|오후/.test(text);
 }

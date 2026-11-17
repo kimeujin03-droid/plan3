@@ -20,8 +20,8 @@ describe('앞날의 일은 계획으로 알아듣는다', () => {
   });
 
   it('"~까지인 …가 있어"는 마감일', () => {
-    expect(p('이번주 금요일까지인 과제가 있어')).toEqual([{ type: 'todo', text: '과제', due: mon + 4 * DAY }]);
-    expect(p('다음 주 화요일까지 보고서 제출')).toEqual([{ type: 'todo', text: '보고서', due: mon + 8 * DAY }]);
+    expect(p('이번주 금요일까지인 과제가 있어')).toEqual([{ type: 'todo', text: '과제', due: mon + 4 * DAY, deadline: true }]);
+    expect(p('다음 주 화요일까지 보고서 제출')).toEqual([{ type: 'todo', text: '보고서', due: mon + 8 * DAY, deadline: true }]);
   });
 
   it('내일 저녁 10시에 … → 내일 22:00', () => {
@@ -49,6 +49,41 @@ describe('앞날의 일은 계획으로 알아듣는다', () => {
   });
 });
 
+describe('11/18 새벽에 보낸 문장들', () => {
+  // 11/18 01:17, 아직 안 잠 → 오늘은 11/17, 내일은 11/18
+  const tue = mon + DAY;
+  const at = tue + DAY + HOUR + 17 * MIN;
+  const q = (text: string) => parse(text, acts, at, logicalToday(at, []));
+
+  it('내일 알바가 9시부터 5시까지 있어 → 11/18 09:00–17:00 알바 계획', () => {
+    expect(q('내일 알바가 9시부터 5시까지 있어')).toEqual([
+      { type: 'todo', text: '알바', due: tue + DAY, start: tue + DAY + 9 * HOUR, end: tue + DAY + 17 * HOUR, activityId: 'job' },
+    ]);
+  });
+
+  it('내일 공부를 2시간 해볼까 → "공부 2시간"', () => {
+    expect(q('내일 공부를 2시간 해볼까')).toEqual([{ type: 'todo', text: '공부 2시간', due: tue + DAY, activityId: 'study' }]);
+  });
+
+  it('내일 아침 9시에 일어날거여 → 09:00 "일어나기"', () => {
+    expect(q('내일 아침 9시에 일어날거여')).toEqual([{ type: 'todo', text: '일어나기', due: tue + DAY, start: tue + DAY + 9 * HOUR, activityId: null }]);
+  });
+
+  it('내일 오후 10시에 약속있어 → 22:00 "약속"', () => {
+    expect(q('내일 오후 10시에 약속있어')).toEqual([{ type: 'todo', text: '약속', due: tue + DAY, start: tue + DAY + 22 * HOUR, activityId: null }]);
+  });
+
+  it('말끝 정리', () => {
+    expect(q('내일 도서관 갈거야')[0]).toMatchObject({ text: '도서관 가기' });
+    expect(q('내일 밥 먹을 거야')[0]).toMatchObject({ text: '밥 먹기' });
+    expect(q('내일 3시부터 5시까지 과제하려고')[0]).toMatchObject({ text: '과제', activityId: 'hw' });
+  });
+
+  it('"내일 … 부터 … 까지"는 절대 지난 기록으로 들어가지 않는다', () => {
+    expect(q('내일 9시부터 5시까지 그거').every((c) => c.type !== 'backfill')).toBe(true);
+  });
+});
+
 describe('자기 전까지는 전날이다', () => {
   const tue3am = mon + DAY + 3 * HOUR;
   const sleep = (start: number, end: number | null): Interval => ({ id: 's', activityId: SLEEP_ID, kind: 'exec', start, end, source: 'chat' });
@@ -61,7 +96,7 @@ describe('자기 전까지는 전날이다', () => {
   it('그때 말하는 "내일"은 몇 시간 뒤의 아침', () => {
     const today = logicalToday(tue3am, []);
     expect(parse('내일 9시에 수업 있어', acts, tue3am, today)[0]).toMatchObject({ due: mon + DAY, start: mon + DAY + 9 * HOUR });
-    expect(parse('오늘까지 과제 제출', acts, tue3am, today)).toEqual([{ type: 'todo', text: '과제', due: mon }]);
+    expect(parse('오늘까지 과제 제출', acts, tue3am, today)).toEqual([{ type: 'todo', text: '과제', due: mon, deadline: true }]);
   });
 
   it('새벽이라도 이미 자고 일어났으면 새 하루', () => {

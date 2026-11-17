@@ -6,7 +6,7 @@ import { activeIntervals, mergeAdd, paintCell, subtract } from './lib/intervals'
 import { rescheduleNudge, scheduleTimerAlert } from './lib/notify';
 import { moaStorage } from './lib/storage';
 import { childColor, DEFAULT_ACTIVITIES, EXTRA_COLORS, SLEEP_ID } from './lib/palette';
-import { parse, type Command } from './lib/parser';
+import { mentionsTime, parse, type Command } from './lib/parser';
 import { recordPlanEdit } from './lib/plans';
 import { CELL, dayStart, fmtDue, fmtDur, fmtHM } from './lib/time';
 import { logicalToday } from './lib/day';
@@ -167,7 +167,7 @@ export function applyCommand(d: Data, cmd: Command, now: number): string {
       const when = fmtDue(cmd.due, logicalToday(now, d.intervals));
       if (cmd.start === undefined) {
         d.todos = [...d.todos, todo];
-        return `"${cmd.text}" ${when}까지로 넣어뒀어.`;
+        return cmd.deadline ? `"${cmd.text}" ${when}까지로 넣어뒀어.` : `${when} 할 일에 "${cmd.text}" 넣어뒀어.`;
       }
       if (cmd.end === undefined) {
         d.todos = [...d.todos, { ...todo, start: cmd.start }];
@@ -268,7 +268,11 @@ export const useStore = create<Store>()(
         };
 
         const api = s0.apiOverride || DEFAULT_API;
-        const notUnderstood = ruleCmds.length === 1 && ruleCmds[0].type === 'memo';
+        // AI를 켰으면 규칙보다 AI를 먼저 믿는다. 규칙이 확실한 짧은 명령(집중 4, 잘게, 공부 시작…)만 바로 처리한다.
+        const sure = ruleCmds.every(
+          (c) => ['focus', 'fatigue', 'quiet'].includes(c.type) || (['start', 'end', 'sleep', 'wake'].includes(c.type) && !mentionsTime(trimmed)),
+        );
+        const notUnderstood = !sure;
         const online = typeof navigator === 'undefined' || navigator.onLine !== false;
         if (notUnderstood && s0.ai && api && online) {
           // 원문은 바로 저장하고, 해석만 서버를 기다린다. 서버가 실패하면 메모로 남는다.

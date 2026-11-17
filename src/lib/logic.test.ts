@@ -171,12 +171,12 @@ describe('대주제와 하위 활동', () => {
 
   it('"~까지"는 기한이 있는 할 일이 된다', () => {
     // 2026-11-16은 월요일
-    expect(parse('금요일까지 수치해석 과제 제출', acts, now)).toEqual([{ type: 'todo', text: '수치해석 과제', due: day + 4 * 24 * HOUR }]);
-    expect(parse('내일까지 장보기 해야지', acts, now)).toEqual([{ type: 'todo', text: '장보기', due: day + 24 * HOUR }]);
-    expect(parse('11월 20일까지 보고서 내기', acts, now)).toEqual([{ type: 'todo', text: '보고서', due: day + 4 * 24 * HOUR }]);
-    expect(parse('3일까지 서류', acts, now)).toEqual([{ type: 'todo', text: '서류', due: new Date(2026, 11, 3).getTime() }]);
-    expect(parse('모아야 오늘까지 장보기', acts, now)).toEqual([{ type: 'todo', text: '장보기', due: day }]);
-    expect(parse('월요일까지 메일', acts, now)).toEqual([{ type: 'todo', text: '메일', due: day }]);
+    expect(parse('금요일까지 수치해석 과제 제출', acts, now)).toEqual([{ type: 'todo', text: '수치해석 과제', due: day + 4 * 24 * HOUR, deadline: true }]);
+    expect(parse('내일까지 장보기 해야지', acts, now)).toEqual([{ type: 'todo', text: '장보기', due: day + 24 * HOUR, deadline: true }]);
+    expect(parse('11월 20일까지 보고서 내기', acts, now)).toEqual([{ type: 'todo', text: '보고서', due: day + 4 * 24 * HOUR, deadline: true }]);
+    expect(parse('3일까지 서류', acts, now)).toEqual([{ type: 'todo', text: '서류', due: new Date(2026, 11, 3).getTime(), deadline: true }]);
+    expect(parse('모아야 오늘까지 장보기', acts, now)).toEqual([{ type: 'todo', text: '장보기', due: day, deadline: true }]);
+    expect(parse('월요일까지 메일', acts, now)).toEqual([{ type: 'todo', text: '메일', due: day, deadline: true }]);
   });
 
   it('하위 활동 이름으로 말하면 그 하위 활동이 시작된다', () => {
