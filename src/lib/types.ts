@@ -53,6 +53,10 @@ export interface Todo {
   end?: number;
   /** hours: 하루 목표(분) */
   minutes?: number;
+  /** 마감 시각까지 정했으면 그 시각(ms). 없으면 그날 하루 안. */
+  dueAt?: number;
+  /** 얼마나 했는지 0~10 (10칸) */
+  progress?: number;
   /** range·hours: 어느 활동인지 */
   activityId?: string;
 }
@@ -82,6 +86,8 @@ export interface Note {
   at: number;
   kind: 'mood' | 'memo';
   text: string;
+  /** 기분 1(힘들어)~5(최고). 말로만 남긴 기분은 없다. */
+  value?: number;
 }
 
 export interface PlanItem {
@@ -108,6 +114,8 @@ export interface Data {
   timer: TimerState | null;
   sleeping: boolean;
   nudge: boolean;
+  /** 계획 알림(1시간 전·10분 전·마감 전) */
+  planAlerts: boolean;
   /** 못 알아들은 말을 AI 서버에 보내도 된다고 사용자가 켠 경우에만 true */
   ai: boolean;
   /** 직접 운영하는 서버 주소. 비어 있으면 빌드에 들어간 기본 주소를 쓴다. */

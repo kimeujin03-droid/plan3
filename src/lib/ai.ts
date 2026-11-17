@@ -1,4 +1,4 @@
-import { matchActivity, type Command } from './parser';
+import { matchActivity, resolveDayWord, type Command } from './parser';
 import { addDays, dayStart, HOUR, MIN } from './time';
 import type { Activity } from './types';
 
@@ -17,6 +17,8 @@ interface WireCommand {
   value?: unknown;
   text?: unknown;
   date?: unknown;
+  when?: unknown;
+  until?: unknown;
 }
 
 const str = (v: unknown, max: number): string => (typeof v === 'string' ? v.trim().slice(0, max) : '');
@@ -57,17 +59,20 @@ export function toCommands(wire: unknown, activities: Activity[], now: number, t
         // 앞날의 일. 날짜는 오늘부터 1년 안, 시각은 있을 때만.
         const text = str(raw.text, 80) || name;
         const dm = typeof raw.date === 'string' ? raw.date.match(/^(\d{4})-(\d{2})-(\d{2})$/) : null;
+        // 날짜 계산은 모델보다 앱이 정확하다: 사용자가 한 날짜 말("내일", "금요일")을 앱이 직접 푼다.
+        const spoken = typeof raw.when === 'string' ? resolveDayWord(raw.when, today) : null;
         if (!text) break;
         // 날짜를 못 받았으면 버리지 않고 기한 없는 계획으로 남긴다.
-        if (!dm) {
+        if (spoken === null && !dm) {
           out.push({ type: 'todo', text, due: null });
           break;
         }
-        const due = new Date(Number(dm[1]), Number(dm[2]) - 1, Number(dm[3])).getTime();
+        const due = spoken ?? new Date(Number(dm![1]), Number(dm![2]) - 1, Number(dm![3])).getTime();
         if (!(due >= today && due <= addDays(today, 366))) break;
         const start = clock(raw.start, due);
         let end = clock(raw.end, due);
-        if (start === null) out.push({ type: 'todo', text, due });
+        if (raw.until === true) out.push(start === null ? { type: 'todo', text, due, deadline: true } : { type: 'todo', text, due, deadline: true, dueAt: start });
+        else if (start === null) out.push({ type: 'todo', text, due });
         else if (end === null) out.push({ type: 'todo', text, due, start, activityId: act?.id ?? null });
         else {
           if (end <= start) end += 24 * HOUR;

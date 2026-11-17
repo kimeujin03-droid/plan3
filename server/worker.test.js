@@ -41,16 +41,21 @@ describe('MOA API 워커', () => {
     expect(init.headers['x-goog-api-key']).toBe('test-key');
   });
 
-  it('스키마가 거절되면 스키마 없이 한 번 더 묻는다', async () => {
+  it('설정이 거절되면 생각 설정을 빼고, 그래도 안 되면 스키마까지 빼고 묻는다', async () => {
     const fetchMock = vi
       .fn()
+      .mockResolvedValueOnce(new Response('{}', { status: 400 }))
       .mockResolvedValueOnce(new Response('{}', { status: 400 }))
       .mockResolvedValueOnce(geminiSays({ commands: [{ type: 'chat', text: '안녕!' }] }));
     vi.stubGlobal('fetch', fetchMock);
     const res = await worker.fetch(post({ text: '안녕' }), env);
     expect(await res.json()).toEqual({ commands: [{ type: 'chat', text: '안녕!' }] });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body).generationConfig.responseSchema).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const cfg = (i) => JSON.parse(fetchMock.mock.calls[i][1].body).generationConfig;
+    expect(cfg(0).thinkingConfig).toEqual({ thinkingLevel: 'minimal' });
+    expect(cfg(1).thinkingConfig).toBeUndefined();
+    expect(cfg(1).responseSchema).toBeDefined();
+    expect(cfg(2).responseSchema).toBeUndefined();
   });
 
   it('잘못된 요청과 너무 큰 요청을 거절한다', async () => {

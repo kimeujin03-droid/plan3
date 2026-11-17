@@ -7,6 +7,20 @@ import { rescheduleNudge, scheduleTimerAlert } from './lib/notify';
 import { moaStorage } from './lib/storage';
 import { childColor, DEFAULT_ACTIVITIES, EXTRA_COLORS, SLEEP_ID } from './lib/palette';
 import { mentionsTime, parse, type Command } from './lib/parser';
+
+/**
+ * 규칙이 알아들은 결과가 미심쩍은지. 미심쩍을 때만 AI에 묻는다(빠르게 하려고).
+ * 이름에 말끝이 남았거나("해볼까"), 모르는 활동 이름이 나왔을 때.
+ */
+function needsAi(cmds: Command[], text: string): boolean {
+  return cmds.some((c) => {
+    if (c.type === 'memo') return true;
+    if (c.type === 'todo') return /(어|야|여|지|까|네|요|음|다|게|래|고|데)$/.test(c.text) || c.text.length > 16;
+    if (c.type === 'backfill') return c.activityId === null;
+    if (c.type === 'start') return c.activityId === null && (mentionsTime(text) || c.name.length > 8);
+    return false;
+  });
+}
 import { recordPlanEdit } from './lib/plans';
 import { CELL, dayStart, fmtDue, fmtDur, fmtHM } from './lib/time';
 import { logicalToday } from './lib/day';
@@ -62,11 +76,19 @@ interface Store extends Data {
   removeActivity: (id: string) => boolean;
   renameActivity: (id: string, name: string) => void;
   setNudge: (on: boolean) => void;
+  setPlanAlerts: (on: boolean) => void;
+  /** 10칸 진행도. 10이 되면 끝낸 것으로 친다. */
+  setProgress: (id: string, progress: number) => void;
+  /** 기분을 1~5로 남긴다. */
+  addMood: (value: number) => void;
   setAi: (on: boolean) => void;
   setApiOverride: (url: string) => void;
   importData: (json: string) => boolean;
   wipe: () => void;
 }
+
+/** 기분 1~5의 이름 */
+export const MOOD_WORDS = ['', '힘들어', '그저 그래', '보통', '좋아', '최고'];
 
 export const emptyData = (): Data => ({
   activities: DEFAULT_ACTIVITIES,
@@ -80,6 +102,7 @@ export const emptyData = (): Data => ({
   timer: null,
   sleeping: false,
   nudge: false,
+  planAlerts: true,
   ai: false,
   apiOverride: '',
 });
@@ -97,6 +120,7 @@ export function pickData(s: Data): Data {
     timer: s.timer,
     sleeping: s.sleeping,
     nudge: s.nudge,
+    planAlerts: s.planAlerts,
     ai: s.ai,
     apiOverride: s.apiOverride,
   };
@@ -165,6 +189,10 @@ export function applyCommand(d: Data, cmd: Command, now: number): string {
       }
       // 자기 전의 새벽은 아직 전날이므로, "오늘·내일"은 그 하루를 기준으로 말한다.
       const when = fmtDue(cmd.due, logicalToday(now, d.intervals));
+      if (cmd.dueAt !== undefined) {
+        d.todos = [...d.todos, { ...todo, dueAt: cmd.dueAt }];
+        return `"${cmd.text}" ${when} ${fmtHM(cmd.dueAt)}까지로 넣어뒀어.`;
+      }
       if (cmd.start === undefined) {
         d.todos = [...d.todos, todo];
         return cmd.deadline ? `"${cmd.text}" ${when}까지로 넣어뒀어.` : `${when} 할 일에 "${cmd.text}" 넣어뒀어.`;
@@ -219,7 +247,7 @@ export function applyCommand(d: Data, cmd: Command, now: number): string {
     }
     case 'mood': {
       d.notes = [...d.notes, { id: uid('note'), at: now, kind: 'mood', text: cmd.text }];
-      return '기분만 적어둘게. 계획은 그대로 뒀어.';
+      return '기분은 돌아보기 › 기분에 모아둘게.';
     }
     case 'quiet': {
       d.nudge = false;
@@ -268,11 +296,8 @@ export const useStore = create<Store>()(
         };
 
         const api = s0.apiOverride || DEFAULT_API;
-        // AI를 켰으면 규칙보다 AI를 먼저 믿는다. 규칙이 확실한 짧은 명령(집중 4, 잘게, 공부 시작…)만 바로 처리한다.
-        const sure = ruleCmds.every(
-          (c) => ['focus', 'fatigue', 'quiet'].includes(c.type) || (['start', 'end', 'sleep', 'wake'].includes(c.type) && !mentionsTime(trimmed)),
-        );
-        const notUnderstood = !sure;
+        // 규칙이 깔끔하게 알아들었으면 바로 반영한다. 미심쩍을 때만 AI를 기다린다.
+        const notUnderstood = needsAi(ruleCmds, trimmed);
         const online = typeof navigator === 'undefined' || navigator.onLine !== false;
         if (notUnderstood && s0.ai && api && online) {
           // 원문은 바로 저장하고, 해석만 서버를 기다린다. 서버가 실패하면 메모로 남는다.
@@ -412,7 +437,7 @@ export const useStore = create<Store>()(
         const todos = get().todos.map((t) => {
           if (t.id !== id) return t;
           finished = !t.done;
-          return { ...t, done: !t.done, doneAt: t.done ? null : now };
+          return { ...t, done: !t.done, doneAt: t.done ? null : now, progress: t.done ? (t.progress === 10 ? 0 : t.progress) : 10 };
         });
         set(finished ? { todos, cheerAt: now } : { todos });
       },
@@ -514,6 +539,26 @@ export const useStore = create<Store>()(
 
       setAi: (on) => set({ ai: on }),
 
+      setPlanAlerts: (on) => set({ planAlerts: on }),
+
+      setProgress: (id, progress) => {
+        const now = Date.now();
+        const p = Math.max(0, Math.min(10, Math.round(progress)));
+        let finished = false;
+        const todos = get().todos.map((t) => {
+          if (t.id !== id) return t;
+          finished = p === 10 && !t.done;
+          return { ...t, progress: p, done: p === 10, doneAt: p === 10 ? t.doneAt ?? now : null };
+        });
+        set(finished ? { todos, cheerAt: now, lastReply: { text: '다 했다! 수고했어.', at: now } } : { todos });
+      },
+
+      addMood: (value) => {
+        const now = Date.now();
+        const v = Math.max(1, Math.min(5, Math.round(value)));
+        set({ notes: [...get().notes, { id: uid('note'), at: now, kind: 'mood', text: MOOD_WORDS[v], value: v }] });
+      },
+
       setApiOverride: (url) => set({ apiOverride: url.trim().replace(/\/+$/, '') }),
 
       importData: (json) => {
@@ -552,6 +597,7 @@ export const useStore = create<Store>()(
             timer: null,
             sleeping: intervals.some((iv) => iv.activityId === SLEEP_ID && iv.end === null),
             nudge: cur.nudge,
+            planAlerts: cur.planAlerts,
             ai: cur.ai,
             apiOverride: cur.apiOverride,
             undoData: pickData(cur),

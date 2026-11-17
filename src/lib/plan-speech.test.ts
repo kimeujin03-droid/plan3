@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { toCommands } from './ai';
 import { logicalToday } from './day';
 import { DEFAULT_ACTIVITIES, SLEEP_ID } from './palette';
-import { parse } from './parser';
+import { parse, resolveDayWord } from './parser';
 import { DAY, HOUR, MIN } from './time';
 import type { Interval } from './types';
 
@@ -81,6 +81,21 @@ describe('11/18 새벽에 보낸 문장들', () => {
 
   it('"내일 … 부터 … 까지"는 절대 지난 기록으로 들어가지 않는다', () => {
     expect(q('내일 9시부터 5시까지 그거').every((c) => c.type !== 'backfill')).toBe(true);
+  });
+});
+
+describe('마감 시각', () => {
+  it('"금요일 6시까지 제출" → 금요일 18:00 마감', () => {
+    expect(p('금요일 6시까지 수치해석 과제 제출')).toEqual([{ type: 'todo', text: '수치해석 과제', due: mon + 4 * DAY, deadline: true, dueAt: mon + 4 * DAY + 18 * HOUR }]);
+    expect(p('금요일까지 오후 11시 59분에 레포트 내기')[0]).toMatchObject({ deadline: true, dueAt: mon + 4 * DAY + 23 * HOUR + 59 * MIN, text: '레포트' });
+  });
+  it('"3시부터 5시까지"는 마감이 아니라 시간 계획', () => {
+    expect(p('수요일 3시부터 5시까지 회의')[0]).toMatchObject({ start: mon + 2 * DAY + 15 * HOUR, end: mon + 2 * DAY + 17 * HOUR });
+  });
+  it('날짜 말 하나를 그날로', () => {
+    expect(resolveDayWord('내일', mon)).toBe(mon + DAY);
+    expect(resolveDayWord('다음 주 화요일', mon)).toBe(mon + 8 * DAY);
+    expect(resolveDayWord('주말', mon)).toBeNull();
   });
 });
 

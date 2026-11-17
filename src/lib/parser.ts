@@ -8,7 +8,7 @@ export type Command =
    * 계획·할 일에 넣기. due는 그날 0시(없으면 null).
    * start와 end가 있으면 "몇 시~몇 시", start만 있으면 "몇 시에".
    */
-  | { type: 'todo'; text: string; due: number | null; start?: number; end?: number; activityId?: string | null; deadline?: boolean }
+  | { type: 'todo'; text: string; due: number | null; start?: number; end?: number; activityId?: string | null; deadline?: boolean; dueAt?: number }
   | { type: 'backfill'; name: string; activityId: string | null; start: number; end: number }
   | { type: 'sleep' }
   | { type: 'wake' }
@@ -156,6 +156,15 @@ function parsePlan(t: string, activities: Activity[], today: number): Command | 
   if (!deadline && (PAST.test(body) || (day <= today && !FUTURE.test(body)))) return null;
   const rest = `${body.slice(0, dm.index)} ${body.slice(dm.index! + dm[0].length)}`.trim();
 
+  // 마감 시각까지 정한 마감: "금요일 6시까지 제출", "금요일까지 오후 6시에 제출". "3시부터 5시까지"는 마감이 아니다.
+  if (!RANGE.test(rest)) {
+    const clock = rest.match(new RegExp(deadline ? `${CLOCK}\\s*(?:까지|에)?` : `${CLOCK}\\s*까지`));
+    if (clock) {
+      const text = planText(`${rest.slice(0, clock.index)} ${rest.slice(clock.index! + clock[0].length)}`);
+      const dueAt = day + minutesOf(clock[1], clock[2], clock[3], clock[4], true) * MIN;
+      return text ? { type: 'todo', text, due: day, deadline: true, dueAt } : null;
+    }
+  }
   if (deadline) {
     const text = planText(rest);
     return text ? { type: 'todo', text, due: day, deadline: true } : null;
@@ -242,4 +251,13 @@ export function parse(text: string, activities: Activity[], now: number, today: 
 /** 날짜·시각을 말하는 문장인지. 이런 문장은 AI가 더 잘 읽는다. */
 export function mentionsTime(text: string): boolean {
   return /\d|오늘|내일|모레|글피|요일|주말|다음\s*주|이번\s*주|까지|아침|저녁|밤|새벽|오전|오후/.test(text);
+}
+
+/** "내일", "금요일", "다음 주 화요일", "11월 20일" 같은 말 하나를 그날 0시로. 못 읽으면 null. */
+export function resolveDayWord(word: string, today: number): number | null {
+  const w = word.trim();
+  if (!w) return null;
+  const m = w.match(DAYWORD);
+  if (!m || m.index !== 0) return null;
+  return resolveDay(m, today);
 }

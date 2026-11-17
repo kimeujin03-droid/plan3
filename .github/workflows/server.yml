@@ -45,13 +45,10 @@ jobs:
         URL=https://moa-api.kimeujin03.workers.dev
         sleep 5
         echo "health: $(curl -sS -m 20 $URL/health)"
-        ask() { echo "$1 => $(curl -sS -m 30 -w ' [%{http_code}]' -X POST $URL/v1/parse -H 'content-type: application/json' -d "{\"text\":\"$1\",\"activities\":[\"공부\",\"과제\",\"이동\"],\"running\":[],\"now\":\"23:50\",\"today\":\"2026-11-16 월\"}")"; }
-        ask "도서관 가는 길인데 좀 졸려"
-        ask "다음주 화요일 3시에 교수님 면담 잡혔어"
-        ask "모레 저녁에 친구랑 밥 먹기로 함"
-        ask "주말 안에 빨래 돌려야 되는데"
-        ask "글피 낮에 치과 가야 함"
-        ask "오늘 뭔가 계속 딴짓만 했네"
-        ask "내일 알바가 9시부터 5시까지 있어"
-        ask "내일 공부를 2시간 해볼까"
-        ask "내일 아침 9시에 일어날거여"
+        ask() { echo "$1 => $(curl -sS -m 30 -w ' [%{http_code} %{time_total}s]' -X POST $URL/v1/parse -H 'content-type: application/json' -d "{\"text\":\"$1\",\"activities\":[\"공부\",\"과제\",\"이동\",\"알바\"],\"running\":[],\"now\":\"$2\",\"today\":\"$3\"}")"; }
+        ask "도서관 가는 길인데 좀 졸려" "14:05" "2026-11-16 월"
+        ask "다음주 화요일 3시에 교수님 면담 잡혔어" "14:05" "2026-11-16 월"
+        ask "금요일 6시까지 레포트 내야 돼" "14:05" "2026-11-16 월"
+        ask "주말 안에 빨래 돌려야 되는데" "14:05" "2026-11-16 월"
+        ask "내일 아침 9시에 일어날거여" "01:16" "2026-11-17 화"
+        ask "내일 공부를 2시간 해볼까" "01:16" "2026-11-17 화"
