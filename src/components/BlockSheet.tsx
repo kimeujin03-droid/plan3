@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { CELL, fmtDur, fmtHM, fmtMD } from '../lib/time';
 import type { Interval } from '../lib/types';
 import { useStore } from '../store';
+import { MemoryCard } from './Memories';
 
 const SOURCE: Record<Interval['source'], string> = { paint: '칠해서', timer: '타이머로', chat: '말로' };
 
@@ -16,6 +17,8 @@ export function BlockSheet({ at, now, onClose }: { at: number; now: number; onCl
   const note = useStore((s) => s.cellNotes.find((n) => n.at === at)?.text ?? '');
   const setCellNote = useStore((s) => s.setCellNote);
   const removeInterval = useStore((s) => s.removeInterval);
+  const memories = useStore((s) => s.memories).filter((m) => m.start < at + CELL && m.end > at);
+  const removeMemory = useStore((s) => s.removeMemory);
   const [text, setText] = useState(note);
   const here = intervals
     .filter((iv) => iv.start < at + CELL && (iv.end ?? now) > at)
@@ -73,6 +76,10 @@ export function BlockSheet({ at, now, onClose }: { at: number; now: number; onCl
             </div>
           );
         })}
+
+        {memories.map((m) => (
+          <MemoryCard key={m.id} m={m} onRemove={() => removeMemory(m.id)} />
+        ))}
 
         <input className="field" aria-label="이 칸의 메모" placeholder="메모 (예: 이동 중 피곤함)" maxLength={40} value={text} onChange={(e) => setText(e.target.value)} onBlur={save} />
       </div>

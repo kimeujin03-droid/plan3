@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { BlockSheet } from '../components/BlockSheet';
 import { Chevron } from '../components/common';
 import { Grid } from '../components/Grid';
+import { RangeSheet } from '../components/RangeSheet';
 import { CategoryChips } from '../components/Pickers';
 import { WeekGrid } from '../components/WeekGrid';
 import { addDays, dayStart, fmtDate, fmtHM, fmtMD, weekStart } from '../lib/time';
@@ -9,7 +10,7 @@ import { useStore } from '../store';
 import { Review } from './Review';
 
 type View = 'day' | 'week' | 'stats';
-type Kind = 'exec' | 'plan' | 'note';
+type Kind = 'exec' | 'plan' | 'select' | 'note';
 
 const VIEWS: { id: View; name: string }[] = [
   { id: 'day', name: '하루' },
@@ -20,6 +21,7 @@ const VIEWS: { id: View; name: string }[] = [
 const KINDS: { id: Kind; name: string }[] = [
   { id: 'exec', name: '한 일' },
   { id: 'plan', name: '계획' },
+  { id: 'select', name: '구간' },
   { id: 'note', name: '메모' },
 ];
 
@@ -70,12 +72,15 @@ export function Record({ now }: { now: number }) {
   const [actId, setActId] = useState(activities[0].id);
   const [noteAt, setNoteAt] = useState<number | null>(null);
   const [detailAt, setDetailAt] = useState<number | null>(null);
+  // 구간 모드: 첫 번째로 누른 칸, 그리고 다 고른 구간(칸 번호)
+  const [anchor, setAnchor] = useState<number | null>(null);
+  const [range, setRange] = useState<[number, number] | null>(null);
   const selected = activities.some((a) => a.id === actId) ? actId : activities[0].id;
   const week = weekStart(day);
   const step = view === 'week' ? 7 : 1;
   const isNow = view === 'week' ? weekStart(now) === week : dayStart(now) === day;
   const kindName = view === 'week' ? '계획' : KINDS.find((k) => k.id === kind)!.name;
-  const showChips = !erasing && (view === 'week' || kind !== 'note');
+  const showChips = !erasing && (view === 'week' || (kind !== 'note' && kind !== 'select'));
 
   return (
     <>
@@ -113,7 +118,7 @@ export function Record({ now }: { now: number }) {
 
             <div className="row" style={{ gap: 8 }}>
               {view === 'day' ? (
-                <div className="seg thin grow" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+                <div className="seg thin grow" style={{ gridTemplateColumns: 'repeat(4, minmax(0, 1fr))' }}>
                   {KINDS.map((k) => (
                     <button
                       key={k.id}
@@ -121,6 +126,8 @@ export function Record({ now }: { now: number }) {
                       onClick={() => {
                         setKind(k.id);
                         setNoteAt(null);
+                        setAnchor(null);
+                        if (k.id === 'select') setErasing(false);
                       }}
                     >
                       {k.name}
@@ -130,6 +137,7 @@ export function Record({ now }: { now: number }) {
               ) : (
                 <div className="grow hint">문지르면 한 시간씩 계획이 칠해져. 요일을 누르면 그날로 가.</div>
               )}
+              {!(view === 'day' && kind === 'select') && (
               <Eraser
                 on={erasing}
                 label={kindName}
@@ -138,10 +146,21 @@ export function Record({ now }: { now: number }) {
                   setNoteAt(null);
                 }}
               />
+              )}
             </div>
 
             {erasing && <div className="erase-note">{kindName}만 지우는 중 · 지우개를 다시 누르면 꺼져</div>}
             {showChips && <CategoryChips value={selected} onChange={setActId} />}
+            {view === 'day' && kind === 'select' && (
+              <div className="hint">
+                {anchor === null ? '시작 칸을 톡, 끝 칸을 톡 (옆으로 문질러도 돼). 데이트·카페 같은 일상도 남겨봐.' : `${fmtHM(day + anchor * 600_000)}부터… 이제 끝 칸을 톡`}
+                {anchor !== null && (
+                  <button className="pill clear" style={{ minHeight: 28, padding: '0 0 0 8px' }} onClick={() => setAnchor(null)}>
+                    취소
+                  </button>
+                )}
+              </div>
+            )}
             {view === 'day' && kind === 'note' && !erasing && (noteAt === null ? <div className="hint">메모할 칸을 눌러줘.</div> : <NoteEditor key={noteAt} at={noteAt} onDone={() => setNoteAt(null)} />)}
           </>
         )}
@@ -149,7 +168,27 @@ export function Record({ now }: { now: number }) {
 
       {view === 'day' && (
         <div className="screen" style={{ paddingTop: 0 }}>
-          <Grid day={day} kind={kind} erasing={erasing} activityId={selected} now={now} onPickCell={setNoteAt} onOpenCell={setDetailAt} />
+          <Grid
+            day={day}
+            kind={kind}
+            erasing={erasing}
+            activityId={selected}
+            now={now}
+            onPickCell={setNoteAt}
+            onOpenCell={setDetailAt}
+            selection={range ?? (anchor !== null ? [anchor, anchor] : null)}
+            onTapCell={(i) => {
+              if (anchor === null) setAnchor(i);
+              else {
+                setRange([Math.min(anchor, i), Math.max(anchor, i)]);
+                setAnchor(null);
+              }
+            }}
+            onSelect={(a, b) => {
+              setAnchor(null);
+              setRange([a, b]);
+            }}
+          />
         </div>
       )}
       {view === 'week' && (
@@ -169,6 +208,7 @@ export function Record({ now }: { now: number }) {
         </div>
       )}
       {view === 'stats' && <Review now={now} />}
+      {range && <RangeSheet key={`${day}-${range[0]}-${range[1]}`} day={day} from={day + range[0] * 600_000} to={day + (range[1] + 1) * 600_000} now={now} onClose={() => setRange(null)} />}
       {detailAt !== null && <BlockSheet key={detailAt} at={detailAt} now={now} onClose={() => setDetailAt(null)} />}
     </>
   );

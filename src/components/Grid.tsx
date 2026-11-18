@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type PointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { cellInfo } from '../lib/intervals';
 import { soft } from '../lib/palette';
 import { CELL, DAY, dayStart } from '../lib/time';
@@ -7,7 +7,7 @@ import { useStore } from '../store';
 interface Props {
   day: number;
   /** 지금 다루는 종류. 칠하기와 지우개 모두 이 종류에만 닿는다. */
-  kind: 'exec' | 'plan' | 'note';
+  kind: 'exec' | 'plan' | 'note' | 'select';
   erasing: boolean;
   activityId: string;
   now: number;
@@ -15,6 +15,12 @@ interface Props {
   onPickCell?: (cellStart: number) => void;
   /** 칸을 길게 눌렀을 때(마우스는 오른쪽 버튼) */
   onOpenCell?: (cellStart: number) => void;
+  /** 구간 모드: 고른 칸(시작·끝 칸 번호) */
+  selection?: [number, number] | null;
+  /** 구간 모드: 옆으로 문질러 고른 구간 */
+  onSelect?: (from: number, to: number) => void;
+  /** 구간 모드: 칸 하나를 톡 */
+  onTapCell?: (index: number) => void;
 }
 
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
@@ -34,7 +40,10 @@ const GAP = 4;
 const radius = (joinLeft: boolean, joinRight: boolean) => `${joinLeft ? 0 : 9}px ${joinRight ? 0 : 9}px ${joinRight ? 0 : 9}px ${joinLeft ? 0 : 9}px`;
 
 /** 하루 격자. 한 줄이 한 시간, 가로 여섯 칸이 10분씩. 옆으로 문지르면 칠해진다. */
-export function Grid({ day, kind, erasing, activityId, now, onPickCell, onOpenCell }: Props) {
+export function Grid({ day, kind, erasing, activityId, now, onPickCell, onOpenCell, selection, onSelect, onTapCell }: Props) {
+  const memories = useStore((s) => s.memories);
+  const [dragSel, setDragSel] = useState<[number, number] | null>(null);
+  const selecting = kind === 'select';
   const intervals = useStore((s) => s.intervals);
   const activities = useStore((s) => s.activities);
   const cellNotes = useStore((s) => s.cellNotes);
@@ -60,6 +69,12 @@ export function Grid({ day, kind, erasing, activityId, now, onPickCell, onOpenCe
       const i = Math.floor((n.at - day) / CELL);
       if (i >= 0 && i < 144) notes.set(i, n.text);
     }
+    // 기억은 시작 칸에 짧게 표시한다.
+    const memo = new Map<number, string>();
+    for (const m of memories) {
+      const i = Math.floor((m.start - day) / CELL);
+      if (i >= 0 && i < 144 && !memo.has(i)) memo.set(i, m.text.split('\n')[0].slice(0, 14) || m.place || byId.get(m.activityId ?? '')?.name || '기억');
+    }
     return infos.map((c, i) => {
       // 줄이 바뀌면 이어 그리지 않는다.
       const p = i % 6 === 0 ? none : infos[i - 1];
@@ -78,11 +93,12 @@ export function Grid({ day, kind, erasing, activityId, now, onPickCell, onOpenCe
         planLabel: !e1 && c.plan && p.plan !== c.plan ? byId.get(c.plan)?.name ?? '' : '',
         label2: e2 && p.exec[1] !== e2 ? byId.get(e2)?.name ?? '' : '',
         note: notes.get(i) ?? '',
+        memory: memo.get(i) ?? '',
       };
     });
     // 분 단위로만 다시 계산한다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [intervals, activities, cellNotes, day, minute]);
+  }, [intervals, activities, cellNotes, memories, day, minute]);
 
   useEffect(() => {
     nowRow.current?.scrollIntoView({ block: 'start' });
@@ -97,13 +113,17 @@ export function Grid({ day, kind, erasing, activityId, now, onPickCell, onOpenCe
   const paintAt = (i: number) => {
     if (picking || drag.current.last === i) return;
     drag.current.last = i;
+    if (selecting) {
+      setDragSel([drag.current.first, i]);
+      return;
+    }
     const at = day + i * CELL;
     if (kind === 'note') eraseNotes(at, 1);
     else paintRange(at, 1, erasing ? (kind === 'plan' ? 'erasePlan' : 'eraseExec') : kind, activityId);
   };
   const begin = (e: PointerEvent<HTMLDivElement>) => {
     drag.current.on = true;
-    beginStroke();
+    if (!selecting) beginStroke();
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
@@ -111,6 +131,9 @@ export function Grid({ day, kind, erasing, activityId, now, onPickCell, onOpenCe
     }
     paintAt(cellAt(e));
   };
+
+  const shown = dragSel ?? selection ?? null;
+  const inSel = (i: number) => !!shown && i >= Math.min(shown[0], shown[1]) && i <= Math.max(shown[0], shown[1]);
 
   const scrollHour = isToday ? Math.max(0, new Date(now).getHours() - 3) : 7;
   const t = new Date(now);
@@ -171,8 +194,14 @@ export function Grid({ day, kind, erasing, activityId, now, onPickCell, onOpenCe
           onPointerUp={() => {
             clearTimeout(press.current);
             const d = drag.current;
+            if (d.on && selecting) {
+              const [a, b] = [d.first, d.last < 0 ? d.first : d.last];
+              setDragSel(null);
+              onSelect?.(Math.min(a, b), Math.max(a, b));
+            }
             if (d.down && !d.on) {
               if (picking) onPickCell?.(day + d.first * CELL);
+              else if (selecting) onTapCell?.(d.first);
               else {
                 beginStroke();
                 paintAt(d.first);
@@ -183,11 +212,12 @@ export function Grid({ day, kind, erasing, activityId, now, onPickCell, onOpenCe
           onPointerCancel={() => {
             // 브라우저가 스크롤로 가져갔다: 아무것도 칠하지 않는다.
             clearTimeout(press.current);
+            setDragSel(null);
             drag.current = { ...drag.current, down: false, on: false };
           }}
         >
           {cells.map((c, i) => (
-            <div className="cell" key={i}>
+            <div className={inSel(i) ? 'cell sel' : 'cell'} key={i}>
               {c.planBg && <i className="plan" style={{ background: c.planBg }} />}
               {c.e1Bg && <i className="exec" style={{ background: c.e1Bg, borderRadius: c.e1R, top: `${TOP}%`, bottom: `${100 - (c.two ? SPLIT : BOTTOM)}%` }} />}
               {c.e2Bg && <i className="exec" style={{ background: c.e2Bg, borderRadius: c.e2R, top: `${SPLIT + GAP}%`, bottom: `${100 - BOTTOM}%` }} />}
@@ -195,6 +225,7 @@ export function Grid({ day, kind, erasing, activityId, now, onPickCell, onOpenCe
               {c.planLabel && <span className="l1 muted">{c.planLabel}</span>}
               {c.label2 && <span className="l2">{c.label2}</span>}
               {c.note && <span className="memo">{c.note}</span>}
+              {c.memory && <span className="mem">{c.memory}</span>}
             </div>
           ))}
           {/* 지금 시각: 이 시간 줄 안에서 분만큼 오른쪽으로 간 세로선. 1분마다 움직인다. */}

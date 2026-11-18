@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent } from 'react';
+import { useState } from 'react';
 import { Chevron } from '../components/common';
 import { CategoryChips } from '../components/Pickers';
 import { logicalDayEnd, logicalToday } from '../lib/day';
@@ -24,7 +24,7 @@ import {
 import { aiSteps, DEFAULT_API } from '../lib/ai';
 import { describeSeries } from '../lib/series';
 import type { Activity, Interval, Todo } from '../lib/types';
-import { useStore } from '../store';
+import { percentOf, useStore } from '../store';
 
 const DOW = ['월', '화', '수', '목', '금', '토', '일'];
 type PlanType = 'due' | 'range' | 'hours';
@@ -61,57 +61,31 @@ function PinIcon() {
   );
 }
 
-/** 체크 옆의 10칸. 눌러서 몇 칸까지 했는지 정하고, 끌어서 한 번에 채운다. 10칸이 되면 끝. */
+/**
+ * 진행률: − [40%] + . 한 번 누르면 설정한 만큼(기본 10%p). 시간이 지났다고 저절로 오르지 않는다.
+ * 단계로 쪼갠 일은 단계에서 계산되므로 버튼이 없다.
+ */
 function Progress({ todo }: { todo: Todo }) {
-  const setProgress = useStore((s) => s.setProgress);
-  const p = todo.progress ?? 0;
-  // 단계가 있으면 진행도는 단계에서 나온다: 직접 바꾸지 않는다.
-  const readOnly = !!todo.steps?.length;
-  const drag = useRef(false);
-  const at = (e: PointerEvent<HTMLDivElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    return Math.max(0, Math.min(9, Math.floor(((e.clientX - r.left) / r.width) * 10)));
-  };
+  const stepProgress = useStore((s) => s.stepProgress);
+  const step = useStore((s) => s.progressStep);
+  const p = percentOf(todo) ?? 0;
+  const fromSteps = !!todo.steps?.length;
   return (
-    <div
-      className="progress"
-      role="slider"
-      aria-label={`${todo.text} 진행도`}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={p * 10}
-      aria-valuetext={`${p * 10}%`}
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'ArrowRight') setProgress(todo.id, p + 1);
-        if (e.key === 'ArrowLeft') setProgress(todo.id, p - 1);
-      }}
-      onPointerDown={(e) => {
-        if (readOnly) return;
-        drag.current = true;
-        try {
-          e.currentTarget.setPointerCapture(e.pointerId);
-        } catch {
-          /* 없어도 된다 */
-        }
-        const i = at(e);
-        // 이미 채운 마지막 칸을 다시 누르면 한 칸 되돌린다.
-        setProgress(todo.id, i + 1 === p ? i : i + 1);
-      }}
-      onPointerMove={(e) => {
-        if (drag.current && !readOnly) setProgress(todo.id, at(e) + 1);
-      }}
-      onPointerUp={() => {
-        drag.current = false;
-      }}
-      onPointerCancel={() => {
-        drag.current = false;
-      }}
-    >
-      {Array.from({ length: 10 }, (_, i) => (
-        <i key={i} data-on={i < p} />
-      ))}
-      <span>{p * 10}%</span>
+    <div className="progress2">
+      {!fromSteps && (
+        <button className="pg-btn" aria-label={`${todo.text} 진행률 ${step}% 내리기`} disabled={p <= 0} onClick={() => stepProgress(todo.id, -1)}>
+          −
+        </button>
+      )}
+      <div className="pg-bar" role="progressbar" aria-label={`${todo.text} 진행률`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={p}>
+        <i style={{ width: `${p}%` }} />
+      </div>
+      <span className="pg-num">{p}%</span>
+      {!fromSteps && (
+        <button className="pg-btn" aria-label={`${todo.text} 진행률 ${step}% 올리기`} disabled={p >= 100} onClick={() => stepProgress(todo.id, 1)}>
+          +
+        </button>
+      )}
     </div>
   );
 }
@@ -246,7 +220,10 @@ export function TodoRow({ todo, today, clock }: { todo: Todo; today: number; clo
   const [open, setOpen] = useState(false);
   const when = todo.done ? null : whenOf(todo, today, clock);
   // 일정(약속·기상)은 진행도가 의미 없다. 마감과 기한 없는 일에만 10칸을 보여준다.
-  const showProgress = !todo.done && (todo.start === undefined || todo.dueAt !== undefined);
+  // 진행률은 켠 일(또는 단계로 쪼갠 일)에만. 약속·장보기는 체크만으로 충분하다.
+  const showProgress = !todo.done && (percentOf(todo) !== undefined || !!todo.steps?.length);
+  const canTrack = !todo.done && percentOf(todo) === undefined && !todo.steps?.length && (todo.start === undefined || todo.dueAt !== undefined);
+  const trackProgress = useStore((s) => s.trackProgress);
   return (
     <div className={`todo${when ? ` lv-${when.level}` : ''}`}>
       <button className="check" role="checkbox" aria-checked={todo.done} aria-label={`${todo.text} ${todo.done ? '끝냄 취소' : '끝냄'}`} onClick={() => toggle(todo.id)}>
@@ -265,6 +242,11 @@ export function TodoRow({ todo, today, clock }: { todo: Todo; today: number; clo
         {open && (
           <div className="row" style={{ gap: 6 }}>
             {!todo.done && !todo.steps?.length && (todo.start === undefined || todo.dueAt !== undefined) && <SplitButton todo={todo} />}
+            {canTrack && (
+              <button className="pill" style={{ background: 'var(--bg)', minHeight: 36 }} onClick={() => trackProgress(todo.id, true)}>
+                진행률
+              </button>
+            )}
             <RemoveButton onClick={() => remove(todo.id)} />
           </div>
         )}

@@ -55,8 +55,12 @@ export interface Todo {
   minutes?: number;
   /** 마감 시각까지 정했으면 그 시각(ms). 없으면 그날 하루 안. */
   dueAt?: number;
-  /** 얼마나 했는지 0~10 (10칸) */
+  /** (예전 10칸 값 0~10. 읽을 때만 쓴다) */
   progress?: number;
+  /** 진행률 0~100. 없으면 이 할 일은 진행률을 쓰지 않는다(체크만). */
+  percent?: number;
+  /** 진행률을 바꾼 기록 */
+  progressLog?: { at: number; from: number; to: number }[];
   /** 장소: 학교, 마트, 다이소… */
   place?: string;
   /** range·hours: 어느 활동인지 */
@@ -65,6 +69,28 @@ export interface Todo {
   seriesId?: string;
   /** 잘게 쪼갠 단계. 있으면 진행도는 단계에서 계산한다. */
   steps?: Step[];
+}
+
+/**
+ * 구간에 붙인 기억: 시간 구간과 내용을 따로 둔다.
+ * 사진·감정을 나중에 바꿔도 시각은 그대로고, 그 사이 다른 활동이 생겨도 이 기록은 지워지지 않는다.
+ */
+export interface Memory {
+  id: string;
+  start: number;
+  end: number;
+  /** 어떤 활동이었는지(없어도 된다) */
+  activityId: string | null;
+  text: string;
+  place?: string;
+  people?: string;
+  /** 기분 1~5 */
+  mood?: number;
+  /** 사진: 앱 안 파일 경로(photos/…) 또는 웹에서는 작은 data URL */
+  photos: string[];
+  /** 이 기억이 이룬 계획 */
+  todoId?: string;
+  createdAt: number;
 }
 
 export interface Step {
@@ -145,6 +171,7 @@ export interface Data {
   todos: Todo[];
   cellNotes: CellNote[];
   series: Series[];
+  memories: Memory[];
   look: Look;
   timer: TimerState | null;
   sleeping: boolean;
@@ -153,6 +180,10 @@ export interface Data {
   planAlerts: boolean;
   /** 아침 한 줄(오늘 계획), 밤 한 줄(빈 시간 채우기) */
   dailyBrief: boolean;
+  /** 진행률 +/− 한 번에 몇 %p */
+  progressStep: 1 | 5 | 10;
+  /** 100%가 되면 바로 끝낼지(false면 체크를 기다린다) */
+  autoComplete: boolean;
   /** 못 알아들은 말을 AI 서버에 보내도 된다고 사용자가 켠 경우에만 true */
   ai: boolean;
   /** 직접 운영하는 서버 주소. 비어 있으면 빌드에 들어간 기본 주소를 쓴다. */

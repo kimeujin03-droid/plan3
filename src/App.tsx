@@ -91,6 +91,9 @@ function Shell() {
 
   // 하루가 바뀌면 반복 일정의 새 날을 채운다.
   const ensureSeries = useStore((s) => s.ensureSeries);
+  // 일상(데이트·친구·휴식·카페·기타) 묶음이 없으면 한 번 넣는다.
+  const ensureLife = useStore((s) => s.ensureLife);
+  useEffect(() => ensureLife(), [ensureLife]);
   const dayKey = new Date(now).toDateString();
   useEffect(() => {
     ensureSeries();

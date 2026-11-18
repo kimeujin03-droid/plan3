@@ -8,14 +8,36 @@ import { moaStorage } from './lib/storage';
 import { childColor, DEFAULT_ACTIVITIES, EXTRA_COLORS, SLEEP_ID } from './lib/palette';
 import { mentionsTime, parse, type Command } from './lib/parser';
 
-/** 단계를 바꾸면 진행도(10칸)와 끝남도 단계에서 다시 계산한다. */
+/** 진행률(0~100). 예전 10칸 값도 읽는다. 진행률을 쓰지 않는 할 일이면 undefined. */
+export function percentOf(t: Todo): number | undefined {
+  if (t.percent !== undefined) return t.percent;
+  if (t.progress !== undefined) return t.progress * 10;
+  return undefined;
+}
+
+export interface RangeRecord {
+  start: number;
+  end: number;
+  activityId: string | null;
+  /** 이 구간을 '한 일'로 칠할지 */
+  asActivity: boolean;
+  text: string;
+  place?: string;
+  people?: string;
+  mood?: number;
+  photos: string[];
+  todoId?: string;
+  completeTodo?: boolean;
+}
+
+/** 단계를 바꾸면 진행률과 끝남도 단계에서 다시 계산한다. */
 function withSteps(t: Todo, steps: Todo['steps'] & object): Todo {
   if (!steps.length) {
     const { steps: _drop, ...rest } = t;
     return rest;
   }
   const done = steps.filter((s) => s.done).length;
-  return { ...t, steps, progress: Math.round((done / steps.length) * 10), done: done === steps.length };
+  return { ...t, steps, percent: Math.round((done / steps.length) * 100), done: done === steps.length };
 }
 
 /** 두 해석이 사실상 같은지(이름 끝의 띄어쓰기 같은 사소한 차이는 무시) */
@@ -41,7 +63,8 @@ import { recordPlanEdit } from './lib/plans';
 import { CELL, dayStart, fmtDue, fmtDur, fmtHM } from './lib/time';
 import { logicalToday } from './lib/day';
 import { describeSeries, materializeSeries } from './lib/series';
-import type { Activity, Data, EraseMode, Look, PaintMode, Series, TimerState, Todo } from './lib/types';
+import type { Activity, Data, EraseMode, Look, Memory, PaintMode, Series, TimerState, Todo } from './lib/types';
+import { LIFE_ACTIVITIES, LIFE_ID } from './lib/palette';
 
 export interface Reply {
   text: string;
@@ -110,8 +133,21 @@ interface Store extends Data {
   toggleStep: (id: string, index: number) => void;
   addStep: (id: string, text: string) => void;
   removeStep: (id: string, index: number) => void;
-  /** 10칸 진행도. 10이 되면 끝낸 것으로 친다. */
-  setProgress: (id: string, progress: number) => void;
+  /** 진행률을 +/− 한 칸(설정의 %p) 바꾼다. 바꾼 시각과 전후 값을 남긴다. */
+  stepProgress: (id: string, dir: 1 | -1) => void;
+  /** 이 할 일에 진행률을 쓸지 */
+  trackProgress: (id: string, on: boolean) => void;
+  setProgressStep: (step: 1 | 5 | 10) => void;
+  setAutoComplete: (on: boolean) => void;
+  /**
+   * 고른 구간을 기록한다. 활동으로 칠할지와 기억(글·장소·사람·감정·사진)을 같이 받는다.
+   * 그 구간에 이미 있는 다른 활동은 지우지 않고 겹쳐 둔다.
+   */
+  recordRange: (r: RangeRecord) => void;
+  updateMemory: (id: string, patch: Partial<Omit<Memory, 'id'>>) => void;
+  removeMemory: (id: string) => void;
+  /** '일상'(데이트·친구·휴식·카페·기타)이 없으면 넣는다 */
+  ensureLife: () => void;
   /** 기분을 1~5로 남긴다. */
   addMood: (value: number) => void;
   setAi: (on: boolean) => void;
@@ -133,12 +169,15 @@ export const emptyData = (): Data => ({
   todos: [],
   cellNotes: [],
   series: [],
+  memories: [],
   look: { accessory: 'none', board: 'sign' },
   timer: null,
   sleeping: false,
   nudge: false,
   planAlerts: true,
   dailyBrief: true,
+  progressStep: 10,
+  autoComplete: true,
   ai: false,
   apiOverride: '',
 });
@@ -154,12 +193,15 @@ export function pickData(s: Data): Data {
     todos: s.todos,
     cellNotes: s.cellNotes,
     series: s.series,
+    memories: s.memories,
     look: s.look,
     timer: s.timer,
     sleeping: s.sleeping,
     nudge: s.nudge,
     planAlerts: s.planAlerts,
     dailyBrief: s.dailyBrief,
+    progressStep: s.progressStep,
+    autoComplete: s.autoComplete,
     ai: s.ai,
     apiOverride: s.apiOverride,
   };
@@ -516,7 +558,9 @@ export const useStore = create<Store>()(
         const todos = get().todos.map((t) => {
           if (t.id !== id) return t;
           finished = !t.done;
-          return { ...t, done: !t.done, doneAt: t.done ? null : now, progress: t.done ? (t.progress === 10 ? 0 : t.progress) : 10 };
+          // 끝냈으면 진행률을 쓰는 일은 100%로 맞춘다. 되돌릴 때는 진행률을 그대로 둔다.
+          const pct = percentOf(t);
+          return { ...t, done: !t.done, doneAt: t.done ? null : now, ...(pct !== undefined && !t.done ? { percent: 100 } : {}) };
         });
         set(finished ? { todos, cheerAt: now } : { todos });
       },
@@ -698,16 +742,93 @@ export const useStore = create<Store>()(
       removeStep: (id, index) =>
         set({ todos: get().todos.map((t) => (t.id === id && t.steps ? withSteps(t, t.steps.filter((_, i) => i !== index)) : t)) }),
 
-      setProgress: (id, progress) => {
+      stepProgress: (id, dir) => {
         const now = Date.now();
-        const p = Math.max(0, Math.min(10, Math.round(progress)));
+        const s = get();
+        let reply: string | null = null;
         let finished = false;
-        const todos = get().todos.map((t) => {
+        const todos = s.todos.map((t) => {
           if (t.id !== id) return t;
-          finished = p === 10 && !t.done;
-          return { ...t, progress: p, done: p === 10, doneAt: p === 10 ? t.doneAt ?? now : null };
+          const from = percentOf(t) ?? 0;
+          const to = Math.max(0, Math.min(100, from + dir * s.progressStep));
+          if (to === from) return t;
+          const log = [...(t.progressLog ?? []), { at: now, from, to }].slice(-100);
+          const next: Todo = { ...t, percent: to, progressLog: log };
+          if (to === 100 && !t.done) {
+            if (s.autoComplete) {
+              finished = true;
+              return { ...next, done: true, doneAt: now };
+            }
+            reply = '100%! 다 끝났으면 체크해줘.';
+          }
+          if (to < 100 && t.done) return { ...next, done: false, doneAt: null };
+          return next;
         });
-        set(finished ? { todos, cheerAt: now, lastReply: { text: '다 했다! 수고했어.', at: now } } : { todos });
+        if (finished) set({ todos, cheerAt: now, lastReply: { text: '다 했다! 수고했어.', at: now } });
+        else set(reply ? { todos, lastReply: { text: reply, at: now } } : { todos });
+      },
+
+      trackProgress: (id, on) =>
+        set({
+          todos: get().todos.map((t) => {
+            if (t.id !== id) return t;
+            if (on) return { ...t, percent: percentOf(t) ?? 0 };
+            const { percent: _p, progress: _q, ...rest } = t;
+            return rest;
+          }),
+        }),
+
+      setProgressStep: (step) => set({ progressStep: step }),
+
+      setAutoComplete: (on) => set({ autoComplete: on }),
+
+      recordRange: (r) => {
+        const now = Date.now();
+        const before = pickData(get());
+        if (!(r.end > r.start)) return;
+        let intervals = before.intervals;
+        const parts: string[] = [];
+        if (r.asActivity && r.activityId && before.activities.some((a) => a.id === r.activityId)) {
+          // 같은 활동끼리만 이어 붙이고, 다른 활동은 그대로 둔다(겹쳐도 된다).
+          intervals = mergeAdd(intervals, { activityId: r.activityId, kind: 'exec', start: r.start, end: Math.min(r.end, now), source: 'paint' });
+          parts.push(`${fmtHM(r.start)}–${fmtHM(r.end)} ${nameOf(before, r.activityId)}`);
+        }
+        const hasMemory = !!(r.text.trim() || r.place?.trim() || r.people?.trim() || r.mood || r.photos.length);
+        const memories = hasMemory
+          ? [
+              ...before.memories,
+              {
+                id: uid('mem'),
+                start: r.start,
+                end: r.end,
+                activityId: r.activityId,
+                text: r.text.trim().slice(0, 1000),
+                photos: r.photos.slice(0, 12),
+                createdAt: now,
+                ...(r.place?.trim() ? { place: r.place.trim().slice(0, 30) } : {}),
+                ...(r.people?.trim() ? { people: r.people.trim().slice(0, 40) } : {}),
+                ...(r.mood ? { mood: r.mood } : {}),
+                ...(r.todoId ? { todoId: r.todoId } : {}),
+              },
+            ]
+          : before.memories;
+        if (hasMemory) parts.push('기억');
+        const todos = r.todoId && r.completeTodo ? before.todos.map((t) => (t.id === r.todoId ? { ...t, done: true, doneAt: t.doneAt ?? now } : t)) : before.todos;
+        if (!parts.length && todos === before.todos) return;
+        set({ intervals, memories, todos, undoData: before, lastReply: { text: `${parts.join(' + ')} 남겼어.`, at: now, undo: true } });
+      },
+
+      updateMemory: (id, patch) => set({ memories: get().memories.map((m) => (m.id === id ? { ...m, ...patch } : m)) }),
+
+      removeMemory: (id) => {
+        const before = pickData(get());
+        set({ memories: before.memories.filter((m) => m.id !== id), undoData: before, lastReply: { text: '기억을 지웠어.', at: Date.now(), undo: true } });
+      },
+
+      ensureLife: () => {
+        const acts = get().activities;
+        if (acts.some((a) => a.id === LIFE_ID)) return;
+        set({ activities: [...acts, ...LIFE_ACTIVITIES] });
       },
 
       addMood: (value) => {
@@ -756,6 +877,9 @@ export const useStore = create<Store>()(
             nudge: cur.nudge,
             planAlerts: cur.planAlerts,
             dailyBrief: cur.dailyBrief,
+            progressStep: cur.progressStep,
+            autoComplete: cur.autoComplete,
+            memories: arr(p.memories).filter((m) => m && typeof m.id === 'string' && Number.isFinite(m.start) && Number.isFinite(m.end)).map((m) => ({ ...m, photos: Array.isArray(m.photos) ? m.photos : [] })),
             look: cur.look,
             series: arr(p.series).filter((x) => x && typeof x.id === 'string' && Array.isArray(x.days) && Number.isFinite(x.startMin)),
             ai: cur.ai,

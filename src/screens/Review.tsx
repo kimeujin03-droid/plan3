@@ -3,6 +3,7 @@ import { Chevron } from '../components/common';
 import { totalsByActivity, unionMs } from '../lib/intervals';
 import { FOCUS_SHADE, rootOf, SLEEP_ID } from '../lib/palette';
 import { addDays, DAY, fmtDur, fmtHM, fmtMD, weekStart } from '../lib/time';
+import { MemoryList } from '../components/Memories';
 import { MoodLog } from '../components/MoodLog';
 import { useStore } from '../store';
 
@@ -10,7 +11,7 @@ const DOW = ['월', '화', '수', '목', '금', '토', '일'];
 
 export function Review({ now }: { now: number }) {
   const s = useStore();
-  const [tab, setTab] = useState<'week' | 'mood' | 'raw'>('week');
+  const [tab, setTab] = useState<'week' | 'memory' | 'mood' | 'raw'>('week');
   const [week, setWeek] = useState(() => weekStart(now));
   const end = addDays(week, 7);
   const byId = new Map(s.activities.map((a) => [a.id, a]));
@@ -45,9 +46,12 @@ export function Review({ now }: { now: number }) {
 
   return (
     <div className="screen">
-      <div className="seg" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+      <div className="seg thin" style={{ gridTemplateColumns: 'repeat(4, minmax(0, 1fr))' }}>
         <button aria-pressed={tab === 'week'} onClick={() => setTab('week')}>
           이번 주
+        </button>
+        <button aria-pressed={tab === 'memory'} onClick={() => setTab('memory')}>
+          추억
         </button>
         <button aria-pressed={tab === 'mood'} onClick={() => setTab('mood')}>
           기분
@@ -158,6 +162,7 @@ export function Review({ now }: { now: number }) {
         </>
       )}
 
+      {tab === 'memory' && <MemoryList />}
       {tab === 'mood' && <MoodLog now={now} />}
       {tab === 'raw' && (
         <>

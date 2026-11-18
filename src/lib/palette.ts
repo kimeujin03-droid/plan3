@@ -12,6 +12,17 @@ export const DEFAULT_ACTIVITIES: Activity[] = [
   { id: SLEEP_ID, name: '수면', color: '#D5D9E8' },
 ];
 
+/** 일상: 공부·일 말고도 남길 가치가 있는 시간 */
+export const LIFE_ID = 'life';
+export const LIFE_ACTIVITIES: Activity[] = [
+  { id: LIFE_ID, name: '일상', color: '#FFD3B6' },
+  { id: 'date', name: '데이트', color: '#FFC2D4', parentId: LIFE_ID },
+  { id: 'friends', name: '친구', color: '#FFE0A8', parentId: LIFE_ID },
+  { id: 'rest', name: '휴식', color: '#C9E7FF', parentId: LIFE_ID },
+  { id: 'cafe', name: '카페', color: '#E8D5C4', parentId: LIFE_ID },
+  { id: 'etc', name: '기타', color: '#E0E0EA', parentId: LIFE_ID },
+];
+
 export const EXTRA_COLORS = ['#B8F0E9', '#FFCF9E', '#E3C4F5', '#C8EFA0', '#F5C6C6', '#BFD0FF'];
 
 export const FOCUS_SHADE: Record<number, string> = {

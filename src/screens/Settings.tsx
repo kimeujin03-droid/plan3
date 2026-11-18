@@ -196,6 +196,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
         </div>
 
         <LookCard />
+        <ProgressCard />
         <PlanAlertCard />
         <BackupCard onMsg={setMsg} />
 
@@ -396,6 +397,34 @@ function LookCard() {
             {b.name}
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/** 진행률 +/− 단위와 100%에서 끝낼지 */
+function ProgressCard() {
+  const step = useStore((s) => s.progressStep);
+  const setStep = useStore((s) => s.setProgressStep);
+  const auto = useStore((s) => s.autoComplete);
+  const setAuto = useStore((s) => s.setAutoComplete);
+  return (
+    <div className="card">
+      <div className="h2">진행률</div>
+      <div className="sub" style={{ fontSize: 13 }}>+/− 한 번에</div>
+      <div className="chips">
+        {([1, 5, 10] as const).map((n) => (
+          <button key={n} className="chip" style={{ background: 'var(--bg)' }} aria-pressed={step === n} onClick={() => setStep(n)}>
+            {n}%
+          </button>
+        ))}
+      </div>
+      <div className="row between">
+        <div className="grow">
+          <div className="h2" style={{ fontSize: 16 }}>100%면 바로 끝내기</div>
+          <div className="sub">끄면 100%가 돼도 체크할 때까지 기다려.</div>
+        </div>
+        <Switch on={auto} label="100%면 바로 끝내기" onToggle={() => setAuto(!auto)} />
       </div>
     </div>
   );
