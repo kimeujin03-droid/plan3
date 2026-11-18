@@ -20,6 +20,7 @@ import {
   fromDateTimeInput,
   HOUR,
   monthStart,
+  weekStart,
 } from '../lib/time';
 import { aiSteps, DEFAULT_API } from '../lib/ai';
 import { describeSeries } from '../lib/series';
@@ -304,7 +305,7 @@ const toMs = (day: number, hm: string) => {
   return day + (h * 60 + m) * 60_000;
 };
 
-function AddTodo({ today, clock, fixedDue }: { today: number; clock: number; fixedDue?: number }) {
+function AddTodo({ clock, fixedDue, onDone }: { today: number; clock: number; fixedDue?: number; onDone?: () => void }) {
   const addTodo = useStore((s) => s.addTodo);
   const activities = useStore((s) => s.activities);
   const [type, setType] = useState<PlanType>('due');
@@ -334,17 +335,18 @@ function AddTodo({ today, clock, fixedDue }: { today: number; clock: number; fix
         const min = (hm: string) => Number(hm.slice(0, 2)) * 60 + Number(hm.slice(3, 5));
         addSeries({ text: text.trim() || name, activityId: actId, days: repeat, startMin: min(from), endMin: min(to), ...(place.trim() ? { place: place.trim() } : {}) });
         setText('');
+        onDone?.();
         return;
       }
       addTodo(text.trim() || name, day, { ...extra, type: 'range', start: toMs(day, from), end: toMs(day, to), activityId: actId });
     } else addTodo(text.trim() || `${name} 매일 ${hours}시간`, null, { type: 'hours', minutes: hours * 60, activityId: actId });
     setText('');
+    onDone?.();
   };
 
   return (
     <form
-      className="card"
-      style={{ gap: 12, padding: 16 }}
+      className="add-form"
       onSubmit={(e) => {
         e.preventDefault();
         submit();
@@ -363,6 +365,7 @@ function AddTodo({ today, clock, fixedDue }: { today: number; clock: number; fix
         <input
           className="field grow"
           aria-label="할 일"
+          autoFocus
           placeholder={fixedDue !== undefined ? `${fmtMD(fixedDue)}까지 할 일` : type === 'due' ? '할 일 적기' : `이름 (비우면 "${name}")`}
           maxLength={80}
           value={text}
@@ -431,6 +434,25 @@ function AddTodo({ today, clock, fixedDue }: { today: number; clock: number; fix
   );
 }
 
+/** + 추가를 누르면 아래에서 올라오는 만들기 창 */
+function AddSheet({ today, clock, fixedDue, onClose }: { today: number; clock: number; fixedDue?: number; onClose: () => void }) {
+  return (
+    <div className="sheet-back" onPointerDown={onClose}>
+      <div className="sheet" role="dialog" aria-modal="true" aria-label="계획 만들기" onPointerDown={(e) => e.stopPropagation()}>
+        <div className="row between">
+          <div className="jua" style={{ fontSize: 20 }}>
+            {fixedDue !== undefined ? `${fmtDayLong(fixedDue)}에 추가` : '계획 만들기'}
+          </div>
+          <button className="pill" style={{ background: 'var(--bg)' }} onClick={onClose}>
+            닫기
+          </button>
+        </div>
+        <AddTodo today={today} clock={clock} fixedDue={fixedDue} onDone={onClose} />
+      </div>
+    </div>
+  );
+}
+
 function Group({ title, todos, today, clock }: { title: string; todos: Todo[]; today: number; clock: number }) {
   if (!todos.length) return null;
   return (
@@ -455,8 +477,7 @@ function ListView({ today, clock }: { today: number; clock: number }) {
   const level = (t: Todo) => whenOf(t, today, clock)?.level;
   return (
     <>
-      <AddTodo today={today} clock={clock} />
-      {open.length === 0 && done.length === 0 && goals.length === 0 && <div className="empty">계획을 적거나, 모아에게 "금요일까지 과제 제출"처럼 말해줘.</div>}
+      {open.length === 0 && done.length === 0 && goals.length === 0 && <div className="empty">위의 + 추가를 누르거나, 모아에게 "금요일까지 과제 제출"처럼 말해줘.</div>}
       <Group title="급한 것" todos={open.filter((t) => level(t) === 'urgent' || level(t) === 'late')} today={today} clock={clock} />
       <Group title="매일 목표 · 오늘 한 만큼 채워져" todos={goals} today={today} clock={clock} />
       <Group title="오늘" todos={open.filter((t) => t.due === today && level(t) !== 'urgent' && level(t) !== 'late')} today={today} clock={clock} />
@@ -491,7 +512,8 @@ function ListView({ today, clock }: { today: number; clock: number }) {
   );
 }
 
-function CalendarView({ today, clock }: { today: number; clock: number }) {
+function MonthView({ today, clock }: { today: number; clock: number }) {
+  const [adding, setAdding] = useState(false);
   const todos = useStore((s) => s.todos);
   const [month, setMonth] = useState(() => monthStart(today));
   const [picked, setPicked] = useState(today);
@@ -556,7 +578,85 @@ function CalendarView({ today, clock }: { today: number; clock: number }) {
           ))}
         </div>
       )}
-      <AddTodo key={picked} today={today} clock={clock} fixedDue={picked} />
+      <button className="pill" style={{ alignSelf: 'flex-start', background: 'var(--card)' }} onClick={() => setAdding(true)}>
+        + 이 날에 추가
+      </button>
+      {adding && <AddSheet today={today} clock={clock} fixedDue={picked} onClose={() => setAdding(false)} />}
+    </>
+  );
+}
+
+/** 주간: 월~일 일곱 줄, 줄마다 그날 계획을 시간 순으로 */
+function WeekView({ today, clock }: { today: number; clock: number }) {
+  const todos = useStore((s) => s.todos);
+  const activities = useStore((s) => s.activities);
+  const [week, setWeek] = useState(() => weekStart(today));
+  const [addFor, setAddFor] = useState<number | null>(null);
+  const days = Array.from({ length: 7 }, (_, i) => addDays(week, i));
+  const color = (t: Todo) => activities.find((a) => a.id === t.activityId)?.color;
+  const timeOf = (t: Todo) => (t.start !== undefined ? fmtHM(t.start) + (t.end !== undefined ? `–${fmtHM(t.end)}` : '') : t.dueAt !== undefined ? `${fmtHM(t.dueAt)}까지` : '마감');
+  return (
+    <>
+      <div className="datebar">
+        <button aria-label="지난주" onClick={() => setWeek(addDays(week, -7))}>
+          <Chevron dir="left" />
+        </button>
+        <button className="jua grow" onClick={() => setWeek(weekStart(today))}>
+          {fmtMD(week)} – {fmtMD(addDays(week, 6))}
+          {weekStart(today) !== week && <span className="back">이번 주로</span>}
+        </button>
+        <button aria-label="다음 주" onClick={() => setWeek(addDays(week, 7))}>
+          <Chevron dir="right" />
+        </button>
+      </div>
+      <div className="card week-agenda">
+        {days.map((d, i) => {
+          const list = todos.filter((t) => t.due === d && t.type !== 'hours').sort((x, y) => (x.start ?? x.dueAt ?? Infinity) - (y.start ?? y.dueAt ?? Infinity));
+          return (
+            <div key={d} className="wa-row" data-today={d === today}>
+              <div className="wa-day">
+                <span>{DOW[i]}</span>
+                <b>{new Date(d).getDate()}</b>
+              </div>
+              <div className="wa-items">
+                {list.length === 0 && <span className="wa-empty">–</span>}
+                {list.map((t) => {
+                  const lv = whenOf(t, today, clock)?.level;
+                  return (
+                    <div key={t.id} className={`wa-item${t.done ? ' done' : ''}${lv === 'urgent' || lv === 'late' ? ' hot' : ''}`}>
+                      <i style={{ background: color(t) ?? 'var(--moa)' }} />
+                      <span className="wa-time">{timeOf(t)}</span>
+                      <span className="wa-text">{t.text}</span>
+                      {t.place && <span className="wa-place">{t.place}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+              <button className="wa-add" aria-label={`${fmtMD(d)}에 계획 추가`} onClick={() => setAddFor(d)}>
+                +
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      {addFor !== null && <AddSheet today={today} clock={clock} fixedDue={addFor} onClose={() => setAddFor(null)} />}
+    </>
+  );
+}
+
+function CalendarView({ today, clock }: { today: number; clock: number }) {
+  const [mode, setMode] = useState<'week' | 'month'>('week');
+  return (
+    <>
+      <div className="seg thin" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+        <button aria-pressed={mode === 'week'} onClick={() => setMode('week')}>
+          주간
+        </button>
+        <button aria-pressed={mode === 'month'} onClick={() => setMode('month')}>
+          월간
+        </button>
+      </div>
+      {mode === 'week' ? <WeekView today={today} clock={clock} /> : <MonthView today={today} clock={clock} />}
     </>
   );
 }
@@ -566,17 +666,24 @@ export function Todos({ now: clock }: { now: number }) {
   // 자기 전의 새벽은 아직 전날이다. 아래 화면들은 그 하루를 '오늘'로 쓴다.
   const today = logicalToday(clock, intervals);
   const [view, setView] = useState<'list' | 'cal'>('list');
+  const [adding, setAdding] = useState(false);
   return (
     <div className="screen">
-      <div className="seg" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
-        <button aria-pressed={view === 'list'} onClick={() => setView('list')}>
-          계획 목록
-        </button>
-        <button aria-pressed={view === 'cal'} onClick={() => setView('cal')}>
-          달력
+      <div className="row" style={{ gap: 8 }}>
+        <div className="seg grow" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+          <button aria-pressed={view === 'list'} onClick={() => setView('list')}>
+            계획
+          </button>
+          <button aria-pressed={view === 'cal'} onClick={() => setView('cal')}>
+            달력
+          </button>
+        </div>
+        <button className="add-btn" onClick={() => setAdding(true)}>
+          + 추가
         </button>
       </div>
       {view === 'list' ? <ListView today={today} clock={clock} /> : <CalendarView today={today} clock={clock} />}
+      {adding && <AddSheet today={today} clock={clock} onClose={() => setAdding(false)} />}
     </div>
   );
 }

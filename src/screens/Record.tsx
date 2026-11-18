@@ -1,54 +1,26 @@
 import { useState } from 'react';
-import { BlockSheet } from '../components/BlockSheet';
 import { Chevron } from '../components/common';
 import { Grid } from '../components/Grid';
-import { RangeSheet } from '../components/RangeSheet';
+import { MemoSheet } from '../components/MemoSheet';
 import { CategoryChips } from '../components/Pickers';
-import { WeekGrid } from '../components/WeekGrid';
-import { addDays, dayStart, fmtDate, fmtHM, fmtMD, weekStart } from '../lib/time';
+import { addDays, CELL, dayStart, fmtDate, fmtHM } from '../lib/time';
+import type { Memory } from '../lib/types';
 import { useStore } from '../store';
 import { Review } from './Review';
 
-type View = 'day' | 'week' | 'stats';
-type Kind = 'exec' | 'plan' | 'select' | 'note';
+type View = 'day' | 'stats';
+type Kind = 'exec' | 'plan' | 'say';
 
 const VIEWS: { id: View; name: string }[] = [
   { id: 'day', name: '하루' },
-  { id: 'week', name: '주간 계획' },
   { id: 'stats', name: '돌아보기' },
 ];
 
 const KINDS: { id: Kind; name: string }[] = [
   { id: 'exec', name: '한 일' },
   { id: 'plan', name: '계획' },
-  { id: 'select', name: '구간' },
-  { id: 'note', name: '메모' },
+  { id: 'say', name: '한마디' },
 ];
-
-/** 누른 칸의 메모를 쓰는 한 줄 편집기 */
-function NoteEditor({ at, onDone }: { at: number; onDone: () => void }) {
-  const existing = useStore((s) => s.cellNotes.find((n) => n.at === at)?.text ?? '');
-  const setCellNote = useStore((s) => s.setCellNote);
-  const [text, setText] = useState(existing);
-  return (
-    <form
-      className="row"
-      onSubmit={(e) => {
-        e.preventDefault();
-        setCellNote(at, text);
-        onDone();
-      }}
-    >
-      <div className="tag" style={{ background: 'var(--card)' }}>
-        {fmtHM(at)}
-      </div>
-      <input className="field grow" style={{ background: 'var(--card)' }} aria-label="칸 메모" placeholder="예: 이동 중 피곤함" maxLength={40} autoFocus value={text} onChange={(e) => setText(e.target.value)} />
-      <button className="pill ink" type="submit">
-        {text.trim() || !existing ? '저장' : '지우기'}
-      </button>
-    </form>
-  );
-}
 
 function Eraser({ on, label, onToggle }: { on: boolean; label: string; onToggle: () => void }) {
   return (
@@ -62,30 +34,31 @@ function Eraser({ on, label, onToggle }: { on: boolean; label: string; onToggle:
   );
 }
 
+interface Open {
+  from: number;
+  to: number;
+  memory: Memory | null;
+}
+
 export function Record({ now }: { now: number }) {
   const activities = useStore((s) => s.activities);
   const [view, setView] = useState<View>('day');
   const [day, setDay] = useState(() => dayStart(now));
   const [kind, setKind] = useState<Kind>('exec');
-  // 지우개는 지금 고른 종류만 지운다: 한 일이면 한 일만, 계획이면 계획만, 메모면 메모만.
+  // 지우개는 지금 고른 종류만 지운다: 한 일이면 한 일만, 계획이면 계획만.
   const [erasing, setErasing] = useState(false);
   const [actId, setActId] = useState(activities[0].id);
-  const [noteAt, setNoteAt] = useState<number | null>(null);
-  const [detailAt, setDetailAt] = useState<number | null>(null);
-  // 구간 모드: 첫 번째로 누른 칸, 그리고 다 고른 구간(칸 번호)
+  // 한마디: 먼저 누른 칸
   const [anchor, setAnchor] = useState<number | null>(null);
-  const [range, setRange] = useState<[number, number] | null>(null);
+  const [open, setOpen] = useState<Open | null>(null);
   const selected = activities.some((a) => a.id === actId) ? actId : activities[0].id;
-  const week = weekStart(day);
-  const step = view === 'week' ? 7 : 1;
-  const isNow = view === 'week' ? weekStart(now) === week : dayStart(now) === day;
-  const kindName = view === 'week' ? '계획' : KINDS.find((k) => k.id === kind)!.name;
-  const showChips = !erasing && (view === 'week' || (kind !== 'note' && kind !== 'select'));
+  const isNow = dayStart(now) === day;
+  const say = kind === 'say';
 
   return (
     <>
       <div className="today-top">
-        <div className="seg" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+        <div className="seg" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
           {VIEWS.map((v) => (
             <button
               key={v.id}
@@ -93,7 +66,6 @@ export function Record({ now }: { now: number }) {
               onClick={() => {
                 setView(v.id);
                 setErasing(false);
-                setNoteAt(null);
               }}
             >
               {v.name}
@@ -101,67 +73,58 @@ export function Record({ now }: { now: number }) {
           ))}
         </div>
 
-        {view !== 'stats' && (
+        {view === 'day' && (
           <>
             <div className="datebar">
-              <button aria-label={view === 'week' ? '지난주' : '전날'} onClick={() => setDay(addDays(day, -step))}>
+              <button aria-label="전날" onClick={() => setDay(addDays(day, -1))}>
                 <Chevron dir="left" />
               </button>
               <button className="jua grow" onClick={() => setDay(dayStart(now))}>
-                {view === 'week' ? `${fmtMD(week)} – ${fmtMD(addDays(week, 6))}` : fmtDate(day)}
-                {!isNow && <span className="back">{view === 'week' ? '이번 주로' : '오늘로'}</span>}
+                {fmtDate(day)}
+                {!isNow && <span className="back">오늘로</span>}
               </button>
-              <button aria-label={view === 'week' ? '다음 주' : '다음 날'} onClick={() => setDay(addDays(day, step))}>
+              <button aria-label="다음 날" onClick={() => setDay(addDays(day, 1))}>
                 <Chevron dir="right" />
               </button>
             </div>
 
             <div className="row" style={{ gap: 8 }}>
-              {view === 'day' ? (
-                <div className="seg thin grow" style={{ gridTemplateColumns: 'repeat(4, minmax(0, 1fr))' }}>
-                  {KINDS.map((k) => (
-                    <button
-                      key={k.id}
-                      aria-pressed={kind === k.id}
-                      onClick={() => {
-                        setKind(k.id);
-                        setNoteAt(null);
-                        setAnchor(null);
-                        if (k.id === 'select') setErasing(false);
-                      }}
-                    >
-                      {k.name}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="grow hint">문지르면 한 시간씩 계획이 칠해져. 요일을 누르면 그날로 가.</div>
-              )}
-              {!(view === 'day' && kind === 'select') && (
-              <Eraser
-                on={erasing}
-                label={kindName}
-                onToggle={() => {
-                  setErasing(!erasing);
-                  setNoteAt(null);
-                }}
-              />
-              )}
+              <div className="seg thin grow" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+                {KINDS.map((k) => (
+                  <button
+                    key={k.id}
+                    aria-pressed={kind === k.id}
+                    onClick={() => {
+                      setKind(k.id);
+                      setAnchor(null);
+                      if (k.id === 'say') setErasing(false);
+                    }}
+                  >
+                    {k.name}
+                  </button>
+                ))}
+              </div>
+              {!say && <Eraser on={erasing} label={kind === 'plan' ? '계획' : '한 일'} onToggle={() => setErasing(!erasing)} />}
             </div>
 
-            {erasing && <div className="erase-note">{kindName}만 지우는 중 · 지우개를 다시 누르면 꺼져</div>}
-            {showChips && <CategoryChips value={selected} onChange={setActId} />}
-            {view === 'day' && kind === 'select' && (
-              <div className="hint">
-                {anchor === null ? '시작 칸을 톡, 끝 칸을 톡 (옆으로 문질러도 돼). 데이트·카페 같은 일상도 남겨봐.' : `${fmtHM(day + anchor * 600_000)}부터… 이제 끝 칸을 톡`}
-                {anchor !== null && (
-                  <button className="pill clear" style={{ minHeight: 28, padding: '0 0 0 8px' }} onClick={() => setAnchor(null)}>
-                    취소
-                  </button>
-                )}
-              </div>
-            )}
-            {view === 'day' && kind === 'note' && !erasing && (noteAt === null ? <div className="hint">메모할 칸을 눌러줘.</div> : <NoteEditor key={noteAt} at={noteAt} onDone={() => setNoteAt(null)} />)}
+            {erasing && <div className="erase-note">{kind === 'plan' ? '계획' : '한 일'}만 지우는 중 · 지우개를 다시 누르면 꺼져</div>}
+            {!erasing && !say && <CategoryChips value={selected} onChange={setActId} />}
+            <div className="hint">
+              {say ? (
+                anchor === null ? (
+                  '이 시간 어떻게 보냈어? 시작 칸 톡, 끝 칸 톡 (옆으로 문질러도 돼)'
+                ) : (
+                  <>
+                    {fmtHM(day + anchor * CELL)}부터… 이제 끝 칸을 톡
+                    <button className="pill clear" style={{ minHeight: 28, padding: '0 0 0 8px' }} onClick={() => setAnchor(null)}>
+                      취소
+                    </button>
+                  </>
+                )
+              ) : (
+                '옆으로 문지르면 칠해져 · 꾸욱 누르면 한마디'
+              )}
+            </div>
           </>
         )}
       </div>
@@ -170,46 +133,38 @@ export function Record({ now }: { now: number }) {
         <div className="screen" style={{ paddingTop: 0 }}>
           <Grid
             day={day}
-            kind={kind}
+            kind={kind === 'plan' ? 'plan' : 'exec'}
             erasing={erasing}
             activityId={selected}
             now={now}
-            onPickCell={setNoteAt}
-            onOpenCell={setDetailAt}
-            selection={range ?? (anchor !== null ? [anchor, anchor] : null)}
+            select={say}
+            anchor={anchor}
             onTapCell={(i) => {
               if (anchor === null) setAnchor(i);
               else {
-                setRange([Math.min(anchor, i), Math.max(anchor, i)]);
+                setOpen({ from: Math.min(anchor, i), to: Math.max(anchor, i), memory: null });
                 setAnchor(null);
               }
             }}
-            onSelect={(a, b) => {
+            onMemo={(from, to, memory) => {
               setAnchor(null);
-              setRange([a, b]);
-            }}
-          />
-        </div>
-      )}
-      {view === 'week' && (
-        <div className="screen" style={{ paddingTop: 0 }}>
-          <WeekGrid
-            week={week}
-            erasing={erasing}
-            activityId={selected}
-            now={now}
-            onOpenDay={(d) => {
-              setDay(d);
-              setView('day');
-              setKind('plan');
-              setErasing(false);
+              setOpen({ from, to, memory });
             }}
           />
         </div>
       )}
       {view === 'stats' && <Review now={now} />}
-      {range && <RangeSheet key={`${day}-${range[0]}-${range[1]}`} day={day} from={day + range[0] * 600_000} to={day + (range[1] + 1) * 600_000} now={now} onClose={() => setRange(null)} />}
-      {detailAt !== null && <BlockSheet key={detailAt} at={detailAt} now={now} onClose={() => setDetailAt(null)} />}
+      {open && (
+        <MemoSheet
+          key={`${day}-${open.from}-${open.to}-${open.memory?.id ?? ''}`}
+          day={day}
+          from={day + open.from * CELL}
+          to={day + (open.to + 1) * CELL}
+          memory={open.memory}
+          now={now}
+          onClose={() => setOpen(null)}
+        />
+      )}
     </>
   );
 }

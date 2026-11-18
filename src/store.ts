@@ -826,9 +826,15 @@ export const useStore = create<Store>()(
       },
 
       ensureLife: () => {
-        const acts = get().activities;
-        if (acts.some((a) => a.id === LIFE_ID)) return;
-        set({ activities: [...acts, ...LIFE_ACTIVITIES] });
+        const s = get();
+        const patch: Partial<Data> = {};
+        if (!s.activities.some((a) => a.id === LIFE_ID)) patch.activities = [...s.activities, ...LIFE_ACTIVITIES];
+        // 예전 '칸 메모'(10분 한 칸)는 한마디로 옮긴다: 같은 상자 모양으로 보이게.
+        if (s.cellNotes.length) {
+          patch.memories = [...s.memories, ...s.cellNotes.map((n) => ({ id: uid('mem'), start: n.at, end: n.at + CELL, activityId: null, text: n.text, photos: [], createdAt: n.at }))];
+          patch.cellNotes = [];
+        }
+        if (Object.keys(patch).length) set(patch);
       },
 
       addMood: (value) => {

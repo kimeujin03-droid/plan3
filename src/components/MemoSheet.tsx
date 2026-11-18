@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { cellInfo } from '../lib/intervals';
 import { deletePhoto, savePhoto } from '../lib/photos';
 import { CELL, fmtDayLong, fmtDur, fmtHM } from '../lib/time';
+import type { Memory } from '../lib/types';
 import { MOOD_WORDS, useStore } from '../store';
 import { Moa } from './Moa';
 import { MOOD_FACE } from './MoodLog';
@@ -20,45 +20,53 @@ const at = (day: number, v: string) => {
 };
 
 /**
- * 고른 구간에 무엇을 남길지 정하는 시트.
- * 모든 칸은 선택: 활동만, 글 한 줄만, 사진만 남겨도 된다. 모아는 적지 않은 내용을 지어내지 않는다.
+ * 격자를 꾸욱 눌러(끌어서) 연 메모 창. 공간에 자유롭게 적는 느낌으로.
+ * 모든 칸은 선택: 글 한 줄, 사진 한 장만 남겨도 된다. 모아는 적지 않은 내용을 지어내지 않는다.
+ * memory를 주면 그 메모를 고친다.
  */
-export function RangeSheet({ day, from, to, now, onClose }: { day: number; from: number; to: number; now: number; onClose: () => void }) {
+export function MemoSheet({ day, from, to, now, memory, onClose }: { day: number; from: number; to: number; now: number; memory?: Memory | null; onClose: () => void }) {
+  const updateMemory = useStore((s) => s.updateMemory);
+  const removeMemory = useStore((s) => s.removeMemory);
+  const removeInterval = useStore((s) => s.removeInterval);
+  const [more, setMore] = useState(false);
   const intervals = useStore((s) => s.intervals);
   const activities = useStore((s) => s.activities);
   const todos = useStore((s) => s.todos);
   const memories = useStore((s) => s.memories);
   const recordRange = useStore((s) => s.recordRange);
-  const [start, setStart] = useState(from);
-  const [end, setEnd] = useState(to);
-  const [actId, setActId] = useState<string>('');
-  const [asActivity, setAsActivity] = useState(true);
-  const [text, setText] = useState('');
-  const [place, setPlace] = useState('');
-  const [people, setPeople] = useState('');
-  const [mood, setMood] = useState<number | undefined>();
-  const [photos, setPhotos] = useState<string[]>([]);
+  const [start, setStart] = useState(memory?.start ?? from);
+  const [end, setEnd] = useState(memory?.end ?? to);
+  const [actId, setActId] = useState<string>(memory?.activityId ?? '');
+  // 메모는 기본으로 시간을 칠하지 않는다. 칠하고 싶을 때만 켠다.
+  const [asActivity, setAsActivity] = useState(false);
+  const [text, setText] = useState(memory?.text ?? '');
+  const [place, setPlace] = useState(memory?.place ?? '');
+  const [people, setPeople] = useState(memory?.people ?? '');
+  const [mood, setMood] = useState<number | undefined>(memory?.mood);
+  const [photos, setPhotos] = useState<string[]>(memory?.photos ?? []);
+  const original = memory?.photos ?? [];
   const [busy, setBusy] = useState(false);
 
   const byId = new Map(activities.map((a) => [a.id, a]));
-  // 이미 이 구간에 있는 한 일(겹쳐서 남긴다는 걸 알려 준다)
-  const overlap = [...new Set(Array.from({ length: Math.max(1, Math.ceil((end - start) / CELL)) }, (_, k) => cellInfo(intervals, start + k * CELL, now).exec).flat())];
   // 이 구간과 겹치는 계획: 했다고 표시할 수 있다
-  const plan = todos.find((t) => !t.done && t.start !== undefined && t.start < end && (t.end ?? t.start + 60 * 60_000) > start);
+  const plan = memory ? undefined : todos.find((t) => !t.done && t.start !== undefined && t.start < end && (t.end ?? t.start + 60 * 60_000) > start);
+  // 이 시간에 이미 있는 기록(분 단위). 여기서 바로 지울 수도 있다.
+  const here = intervals.filter((iv) => iv.start < end && (iv.end ?? now) > start).sort((a, b) => a.start - b.start);
   const [completePlan, setCompletePlan] = useState(true);
   const recentPlaces = [...new Set([...memories.map((m) => m.place), ...todos.map((t) => t.place)].filter((p): p is string => !!p).reverse())].slice(0, 4);
   const future = start >= now;
   const valid = end > start;
   // 남기지 않고 닫으면 붙였던 사진 파일도 지운다.
   const cancel = () => {
-    photos.forEach((p) => void deletePhoto(p));
+    // 새로 붙였다가 저장하지 않은 사진만 지운다.
+    photos.filter((p) => !original.includes(p)).forEach((p) => void deletePhoto(p));
     onClose();
   };
   const hasSomething = (!!actId && asActivity && !future) || !!text.trim() || !!place.trim() || !!people.trim() || !!mood || photos.length > 0 || (!!plan && completePlan);
 
   return (
     <div className="sheet-back" onPointerDown={cancel}>
-      <div className="sheet range-sheet" role="dialog" aria-modal="true" aria-label="구간 기록" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="sheet range-sheet" role="dialog" aria-modal="true" aria-label="이 시간 한마디" onPointerDown={(e) => e.stopPropagation()}>
         <div className="row between">
           <div>
             <div className="sub" style={{ fontSize: 12 }}>
@@ -89,24 +97,7 @@ export function RangeSheet({ day, from, to, now, onClose }: { day: number; from:
         </div>
         {!valid && <div className="hint" style={{ color: '#8a2444' }}>끝이 시작보다 뒤여야 해.</div>}
 
-        {overlap.length > 0 && (
-          <div className="hint">
-            이 시간엔 이미 {overlap.map((id) => byId.get(id)?.name ?? '').join(', ')}이(가) 있어. 지우지 않고 겹쳐서 남길게.
-          </div>
-        )}
-
-        <div className="sub" style={{ fontSize: 13 }}>
-          뭐 했어? <span style={{ fontSize: 12 }}>(안 골라도 돼)</span>
-        </div>
-        <CategoryChips value={actId} onChange={(id) => setActId(id === actId ? '' : id)} />
-        {actId && (
-          <label className="row" style={{ gap: 8, fontSize: 14 }}>
-            <input type="checkbox" checked={asActivity && !future} disabled={future} onChange={(e) => setAsActivity(e.target.checked)} />
-            {future ? '아직 안 온 시간이라 한 일로 칠하지는 않아' : '이 시간을 한 일로 칠하기'}
-          </label>
-        )}
-
-        <textarea className="field memo-text" aria-label="어디서, 무엇을 했어?" placeholder="어디서, 무엇을 했어? (예: 친구랑 카페에서 케이크 먹으면서 수다)" maxLength={1000} rows={3} value={text} onChange={(e) => setText(e.target.value)} />
+        <textarea className="field memo-text" aria-label="한마디" placeholder="여기에 자유롭게 (예: 친구랑 카페에서 케이크 먹으면서 수다)" maxLength={1000} rows={3} autoFocus={!memory} value={text} onChange={(e) => setText(e.target.value)} />
 
         <div className="chips place-row">
           <label className="place-field">
@@ -141,7 +132,7 @@ export function RangeSheet({ day, from, to, now, onClose }: { day: number; from:
               size={64}
               onRemove={() => {
                 setPhotos(photos.filter((x) => x !== p));
-                void deletePhoto(p);
+                if (!original.includes(p)) void deletePhoto(p);
               }}
             />
           ))}
@@ -166,6 +157,17 @@ export function RangeSheet({ day, from, to, now, onClose }: { day: number; from:
           )}
         </div>
 
+        <div className="sub" style={{ fontSize: 13 }}>
+          무슨 일이었어? <span style={{ fontSize: 12 }}>(안 골라도 돼)</span>
+        </div>
+        <CategoryChips value={actId} onChange={(id) => setActId(id === actId ? '' : id)} />
+        {actId && !memory && (
+          <label className="row" style={{ gap: 8, fontSize: 14 }}>
+            <input type="checkbox" checked={asActivity && !future} disabled={future} onChange={(e) => setAsActivity(e.target.checked)} />
+            {future ? '아직 안 온 시간이라 한 일로 칠하지는 않아' : '이 시간을 한 일로도 칠하기'}
+          </label>
+        )}
+
         {plan && (
           <label className="row" style={{ gap: 8, fontSize: 14, background: 'var(--bg)', borderRadius: 14, padding: '10px 12px' }}>
             <input type="checkbox" checked={completePlan} onChange={(e) => setCompletePlan(e.target.checked)} />
@@ -173,10 +175,37 @@ export function RangeSheet({ day, from, to, now, onClose }: { day: number; from:
           </label>
         )}
 
+        {here.length > 0 && (
+          <button className="pill clear" style={{ alignSelf: 'flex-start', minHeight: 32, padding: 0 }} aria-expanded={more} onClick={() => setMore(!more)}>
+            이 시간의 기록 {here.length}개 {more ? '접기' : '보기'}
+          </button>
+        )}
+        {more &&
+          here.map((iv) => (
+            <div key={iv.id} className="row" style={{ gap: 8 }}>
+              <span className="chip small" style={{ background: byId.get(iv.activityId)?.color }}>
+                {byId.get(iv.activityId)?.name ?? '활동'}
+              </span>
+              <span className="grow sub" style={{ fontSize: 13 }}>
+                {iv.kind === 'plan' ? '계획' : '한 일'} · {fmtHM(iv.start)}–{iv.end === null ? '지금' : fmtHM(iv.end)} · {fmtDur((iv.end ?? now) - iv.start)}
+              </span>
+              <button className="pill clear" style={{ minHeight: 32 }} onClick={() => removeInterval(iv.id)}>
+                지우기
+              </button>
+            </div>
+          ))}
+
         <button
           className="big-btn ink"
           disabled={!valid || !hasSomething || busy}
           onClick={() => {
+            if (memory) {
+              const clean = (v: string) => v.trim() || undefined;
+              updateMemory(memory.id, { start, end, activityId: actId || null, text: text.trim(), place: clean(place), people: clean(people), mood, photos });
+              original.filter((p) => !photos.includes(p)).forEach((p) => void deletePhoto(p));
+              onClose();
+              return;
+            }
             recordRange({
               start,
               end,
@@ -192,8 +221,20 @@ export function RangeSheet({ day, from, to, now, onClose }: { day: number; from:
             onClose();
           }}
         >
-          남기기
+          {memory ? '고치기' : '남기기'}
         </button>
+        {memory && (
+          <button
+            className="pill clear"
+            style={{ alignSelf: 'center' }}
+            onClick={() => {
+              removeMemory(memory.id);
+              onClose();
+            }}
+          >
+            이 메모 지우기
+          </button>
+        )}
       </div>
     </div>
   );
