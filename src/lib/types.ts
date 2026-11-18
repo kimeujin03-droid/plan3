@@ -69,6 +69,8 @@ export interface Todo {
   seriesId?: string;
   /** 잘게 쪼갠 단계. 있으면 진행도는 단계에서 계산한다. */
   steps?: Step[];
+  /** 바깥에서 들어온 일정의 표지(캘린더 UID+시각). 같은 것을 두 번 넣지 않는 데 쓴다. */
+  ext?: string;
 }
 
 /**

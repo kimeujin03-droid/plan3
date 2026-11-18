@@ -1,7 +1,7 @@
 {
   "name": "moa",
   "private": true,
-  "version": "0.12.1",
+  "version": "0.13.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -22,6 +22,7 @@
     "@capacitor/share": "^8.0.3",
     "@fontsource/gowun-dodum": "^5.3.0",
     "@fontsource/jua": "^5.3.0",
+    "fflate": "^0.8.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zustand": "^5.0.10"

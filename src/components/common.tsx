@@ -4,6 +4,8 @@ import { SLEEP_ID } from '../lib/palette';
 import { fmtClock, HOUR } from '../lib/time';
 import { useStore } from '../store';
 import { Moa } from './Moa';
+import { looksLikeWeekRequest } from '../lib/weekplan';
+import { WeekPlanSheet } from './WeekPlanSheet';
 
 /** 화면을 주기적으로 다시 그리기 위한 현재 시각. */
 export function useNow(everyMs: number): number {
@@ -92,13 +94,21 @@ export function InputBar({ placeholder = '모아야, 나 지금…' }: { placeho
   const say = useStore((s) => s.say);
   const [text, setText] = useState('');
   const field = useRef<HTMLInputElement>(null);
+  const [week, setWeek] = useState<string | null>(null);
   const send = () => {
     if (!text.trim()) return;
+    // 한 주 일정을 길게 부탁하면 한 주 짜기 창으로 넘긴다.
+    if (looksLikeWeekRequest(text)) {
+      setWeek(text);
+      setText('');
+      return;
+    }
     say(text);
     setText('');
   };
   return (
     <div className="inputwrap">
+      {week !== null && <WeekPlanSheet initialText={week} onClose={() => setWeek(null)} />}
       <Suggestions
         text={text}
         onPick={(next) => {

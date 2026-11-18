@@ -37,6 +37,7 @@ const TYPES: { id: PlanType; name: string; hint: string }[] = [
 
 export { byUrgency, whenOf, type Urgency } from '../lib/when';
 import { byUrgency, whenOf } from '../lib/when';
+import { WeekPlanSheet } from '../components/WeekPlanSheet';
 
 /** 오늘 그 활동(하위 활동 포함)을 실제로 한 시간(ms) */
 export function doneToday(todo: Todo, intervals: Interval[], activities: Activity[], today: number): number {
@@ -667,6 +668,7 @@ export function Todos({ now: clock }: { now: number }) {
   const today = logicalToday(clock, intervals);
   const [view, setView] = useState<'list' | 'cal'>('list');
   const [adding, setAdding] = useState(false);
+  const [planning, setPlanning] = useState(false);
   return (
     <div className="screen">
       <div className="row" style={{ gap: 8 }}>
@@ -682,8 +684,13 @@ export function Todos({ now: clock }: { now: number }) {
           + 추가
         </button>
       </div>
+      <button className="wk-open" onClick={() => setPlanning(true)}>
+        <b>한 주 짜기</b>
+        <span>할 일을 길게 적으면 빈 시간에 나눠 줄게</span>
+      </button>
       {view === 'list' ? <ListView today={today} clock={clock} /> : <CalendarView today={today} clock={clock} />}
       {adding && <AddSheet today={today} clock={clock} onClose={() => setAdding(false)} />}
+      {planning && <WeekPlanSheet onClose={() => setPlanning(false)} />}
     </div>
   );
 }

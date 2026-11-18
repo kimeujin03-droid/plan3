@@ -92,6 +92,8 @@ interface Store extends Data {
   /** 방금 무언가를 끝낸 시각. 모아가 잠깐 신나 한다. 저장하지 않는다. */
   cheerAt: number;
   addTodo: (text: string, due: number | null, extra?: Pick<Todo, 'type' | 'start' | 'end' | 'minutes' | 'activityId' | 'dueAt' | 'place'>) => void;
+  /** 여러 계획을 한 번에 넣는다(한 주 짜기, 캘린더 불러오기). 한 번에 되돌릴 수 있다. */
+  addPlans: (items: { text: string; due: number | null; extra?: Pick<Todo, 'type' | 'start' | 'end' | 'activityId' | 'place' | 'ext'> }[], reply: string) => void;
   /** 타이머(mode 'timer')나 뽀모도로를 시작한다. 활동도 같이 시작된다. */
   startTimer: (mode: TimerState['mode'], activityId: string, minutes: number) => void;
   /** 타이머 표시만 끈다. 돌고 있는 기록은 건드리지 않는다. */
@@ -491,6 +493,33 @@ export const useStore = create<Store>()(
           intervals = mergeAdd(intervals, { activityId: todo.activityId, kind: 'plan', start: todo.start, end: todo.end, source: 'paint' });
         }
         set({ todos: [...s.todos, todo], intervals });
+      },
+
+      addPlans: (items, reply) => {
+        if (!items.length) return;
+        const now = Date.now();
+        const s = get();
+        const before = pickData(s);
+        let intervals = s.intervals;
+        const added: Todo[] = [];
+        const seen = new Set(s.todos.map((t) => t.ext).filter(Boolean));
+        for (const it of items) {
+          const t = it.text.trim().slice(0, 80);
+          if (!t) continue;
+          if (it.extra?.ext && seen.has(it.extra.ext)) continue;
+          const todo: Todo = { id: uid('todo'), text: t, due: it.due, done: false, doneAt: null, createdAt: now, ...it.extra };
+          if (todo.ext) seen.add(todo.ext);
+          if (todo.type === 'range' && todo.activityId && todo.start !== undefined && todo.end !== undefined && todo.end > todo.start) {
+            intervals = subtract(intervals, todo.start, todo.end, (iv) => iv.kind === 'plan', now);
+            intervals = mergeAdd(intervals, { activityId: todo.activityId, kind: 'plan', start: todo.start, end: todo.end, source: 'paint' });
+          }
+          added.push(todo);
+        }
+        if (!added.length) {
+          set({ lastReply: { text: '새로 넣을 게 없었어.', at: now } });
+          return;
+        }
+        set({ todos: [...s.todos, ...added], intervals, undoData: before, lastReply: { text: reply.replace('{n}', String(added.length)), at: now, undo: true } });
       },
 
       startTimer: (mode, activityId, minutes) => {

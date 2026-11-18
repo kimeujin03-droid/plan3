@@ -95,3 +95,46 @@ describe('MOA API 워커', () => {
     expect(sanitize(null)).toEqual({ commands: [] });
   });
 });
+
+describe('한 주 짜기 /v1/week', () => {
+  const days = ['2026-11-18 수', '2026-11-19 목', '2026-11-20 금', '2026-11-21 토', '2026-11-22 일', '2026-11-23 월', '2026-11-24 화'];
+  const req = (body) =>
+    new Request('https://moa-api.test/v1/week', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://localhost' },
+      body: JSON.stringify(body),
+    });
+
+  it('할 일만 걸러서 돌려주고, 이번 주 밖의 날짜는 버린다', async () => {
+    const fetchMock = vi.fn(async () =>
+      geminiSays({
+        tasks: [
+          { text: ' 미적분 복습 ', minutes: 0, chunk: 120, on: '', due: '', after: '미적분', hack: 1 },
+          { text: '카카오 명의변경', minutes: 0, chunk: 0, on: '2026-11-19', due: '2027-01-01', after: '' },
+          { text: '', minutes: 30 },
+          { text: '학술제 자료조사', minutes: -5, chunk: 'x', on: '', due: '', after: '' },
+        ],
+        events: [{ text: '치과', date: '2026-11-20', start: '15:00', end: '99:00' }, { text: '먼 약속', date: '2027-01-01', start: '10:00' }],
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const res = await worker.fetch(req({ text: '이번 주 일정 짜줘 …', days, events: [{ date: '2026-11-19', start: '10:00', end: '11:30', text: '기초미적분학' }] }), env);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      tasks: [
+        { text: '미적분 복습', minutes: 0, chunk: 120, after: '미적분' },
+        { text: '카카오 명의변경', minutes: 0, chunk: 0, on: '2026-11-19' },
+        { text: '학술제 자료조사', minutes: 0, chunk: 0 },
+      ],
+      events: [{ text: '치과', date: '2026-11-20', start: '15:00' }],
+    });
+    const sent = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(JSON.parse(sent.contents[0].parts[0].text).events[0].text).toBe('기초미적분학');
+  });
+
+  it('날짜 목록이 없으면 400', async () => {
+    vi.stubGlobal('fetch', vi.fn());
+    const res = await worker.fetch(req({ text: '짜줘' }), env);
+    expect(res.status).toBe(400);
+  });
+});
