@@ -352,7 +352,7 @@ const WEEK_SCHEMA = {
           until: { type: 'STRING' },
           place: { type: 'STRING' },
         },
-        required: ['text', 'days', 'start'],
+        required: ['text', 'days', 'start', 'end', 'from', 'until', 'place'],
       },
     },
     prefs: {
