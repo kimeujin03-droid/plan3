@@ -46,10 +46,21 @@ describe('종류별 지우개', () => {
     st.paintRange(past, 3, 'erasePlan', 'study');
     expect(useStore.getState().intervals.map((iv) => iv.kind)).toEqual(['exec']);
     st.paintRange(past, 3, 'plan', 'study');
-    st.paintRange(past, 1, 'eraseExec', 'study');
+    st.paintRange(past, 1, 'eraseExec', '');
     const left = useStore.getState().intervals;
     expect(left.find((iv) => iv.kind === 'plan')).toMatchObject({ start: past, end: past + 3 * CELL });
     expect(left.find((iv) => iv.kind === 'exec')).toMatchObject({ start: past + CELL, end: past + 3 * CELL });
+  });
+
+  it('활동을 고르면 겹친 일정 중 그 활동만 지운다', () => {
+    const st = useStore.getState();
+    const past = T0 - 2 * HOUR;
+    st.paintRange(past, 3, 'exec', 'study');
+    st.paintRange(past, 3, 'exec', 'move');
+    expect(useStore.getState().intervals.filter((iv) => iv.start === past).length).toBe(2);
+    st.paintRange(past, 3, 'eraseExec', 'move');
+    const left = useStore.getState().intervals.filter((iv) => iv.start === past);
+    expect(left.map((iv) => iv.activityId)).toEqual(['study']);
   });
 
   it('메모 지우개는 그 칸의 메모만 지운다', () => {

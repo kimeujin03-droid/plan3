@@ -63,7 +63,10 @@ import { recordPlanEdit } from './lib/plans';
 import { CELL, dayStart, fmtDue, fmtDur, fmtHM } from './lib/time';
 import { logicalToday } from './lib/day';
 import { describeSeries, materializeSeries } from './lib/series';
-import type { Activity, Data, EraseMode, Focus, Look, Memory, PaintMode, Series, TimerState, Todo } from './lib/types';
+import type { Activity, Data, EraseMode, Focus, Look, Memory, PaintMode, Period, Series, TimerState, Todo } from './lib/types';
+
+/** 매주 고정 일정을 쉬는 구간 */
+const pausesOf = (d: { periods?: Period[] }) => (d.periods ?? []).filter((p) => p.pause);
 import { LIFE_ACTIVITIES, LIFE_ID } from './lib/palette';
 
 /** 한 번에 넣을 계획 하나 */
@@ -104,6 +107,9 @@ interface Store extends Data {
   /** 한 주 짜기 확정: 계획 + 고정 일정(기간 있는 반복) + 집중 시간을 한 번에. 한 번에 되돌린다. {n}은 넣은 개수 */
   applyWeek: (input: { plans: PlanItem[]; series?: Omit<Series, 'id' | 'skip' | 'createdAt'>[]; focus?: Omit<Focus, 'id'>[] }, reply: string) => void;
   removeFocus: (id: string) => void;
+  /** 기간(시험 기간 등)을 넣거나 고친다. pause면 그동안의 앞으로 매주 고정 일정을 치운다. 되돌릴 수 있다. */
+  savePeriod: (p: Omit<Period, 'id'> & { id?: string }) => void;
+  removePeriod: (id: string) => void;
   /** 타이머(mode 'timer')나 뽀모도로를 시작한다. 활동도 같이 시작된다. */
   startTimer: (mode: TimerState['mode'], activityId: string, minutes: number) => void;
   /** 타이머 표시만 끈다. 돌고 있는 기록은 건드리지 않는다. */
@@ -116,6 +122,10 @@ interface Store extends Data {
   eraseNotes: (cellStart: number, cells: number) => void;
   toggleTodo: (id: string) => void;
   removeTodo: (id: string) => void;
+  /** 짠 계획을 고친다(이름·날짜·시각·장소·활동). 시각을 정한 계획이면 격자의 계획 칠도 옮긴다. 되돌릴 수 있다. */
+  updateTodo: (id: string, patch: Partial<Pick<Todo, 'text' | 'due' | 'dueAt' | 'start' | 'end' | 'place' | 'activityId' | 'minutes'>>) => void;
+  /** 매주 고정 일정을 고친다. 앞으로의 안 한 날들은 새 요일·시각으로 다시 만든다. 되돌릴 수 있다. */
+  updateSeries: (id: string, patch: Partial<Pick<Series, 'text' | 'days' | 'startMin' | 'endMin' | 'place' | 'until' | 'activityId'>>) => void;
   /** 기록 하나를 통째로 지운다. 되돌릴 수 있다. */
   removeInterval: (id: string) => void;
   /** 칸 메모를 쓰거나(빈 글이면) 지운다. */
@@ -127,6 +137,10 @@ interface Store extends Data {
   /** 기록에 쓰인 적 없고 하위 활동도 없을 때만 지운다. 지웠으면 true. */
   removeActivity: (id: string) => boolean;
   renameActivity: (id: string, name: string) => void;
+  /** 활동 색 바꾸기(#RRGGBB) */
+  setActivityColor: (id: string, color: string) => void;
+  /** 같은 줄(대주제끼리, 같은 대주제의 하위끼리)에서 한 칸 앞(-1)·뒤(1)로 */
+  moveActivity: (id: string, dir: -1 | 1) => void;
   setNudge: (on: boolean) => void;
   setPlanAlerts: (on: boolean) => void;
   setDailyBrief: (on: boolean) => void;
@@ -182,6 +196,7 @@ export const emptyData = (): Data => ({
   cellNotes: [],
   series: [],
   focus: [],
+  periods: [],
   memories: [],
   look: { accessory: 'none', board: 'sign' },
   timer: null,
@@ -207,6 +222,7 @@ export function pickData(s: Data): Data {
     cellNotes: s.cellNotes,
     series: s.series,
     focus: s.focus,
+    periods: s.periods,
     memories: s.memories,
     look: s.look,
     timer: s.timer,
@@ -289,7 +305,7 @@ export function applyCommand(d: Data, cmd: Command, now: number): string {
         ...(cmd.place ? { place: cmd.place.slice(0, 20) } : {}),
       };
       d.series = [...d.series, s];
-      const out = materializeSeries([s], d.todos, d.intervals, logicalToday(now, d.intervals), now, () => uid('todo'));
+      const out = materializeSeries([s], d.todos, d.intervals, logicalToday(now, d.intervals), now, () => uid('todo'), undefined, pausesOf(d));
       d.todos = out.todos;
       d.intervals = out.intervals;
       return `${describeSeries(s)} "${s.text}" 반복으로 넣었어. 2주치 계획에 칠해뒀어.`;
@@ -478,7 +494,9 @@ export const useStore = create<Store>()(
           }
           if (mode === 'erasePlan' || mode === 'eraseExec') {
             const kind = mode === 'erasePlan' ? 'plan' : 'exec';
-            intervals = subtract(intervals, at, at + CELL, (iv) => iv.kind === kind, now);
+            // activityId가 있으면 그 활동(과 하위)만 지운다. 겹친 다른 일정은 남는다.
+            const only = activityId ? new Set([activityId, ...s.activities.filter((a) => a.parentId === activityId).map((a) => a.id)]) : null;
+            intervals = subtract(intervals, at, at + CELL, (iv) => iv.kind === kind && (!only || only.has(iv.activityId)), now);
           } else intervals = paintCell(intervals, at, activityId, mode, now);
         }
         if (blocked && intervals === s.intervals) {
@@ -509,6 +527,29 @@ export const useStore = create<Store>()(
 
       addPlans: (items, reply) => get().applyWeek({ plans: items }, reply),
 
+      savePeriod: (input) => {
+        const now = Date.now();
+        const before = pickData(get());
+        const name = input.name.trim().slice(0, 20) || '시험 기간';
+        if (input.end < input.start) return;
+        const p: Period = { id: input.id ?? uid('period'), name, start: input.start, end: input.end, pause: input.pause };
+        const periods = input.id ? before.periods.map((x) => (x.id === input.id ? p : x)) : [...before.periods, p];
+        // 쉬는 기간이 바뀌었으니 앞으로의 안 한 반복 날들을 다시 만든다.
+        const gone = before.todos.filter((t) => t.seriesId && !t.done && (t.start ?? 0) > now);
+        let intervals = before.intervals;
+        for (const t of gone) if (t.start !== undefined && t.end !== undefined && t.activityId) intervals = subtract(intervals, t.start, t.end, (iv) => iv.kind === 'plan' && iv.activityId === t.activityId, now);
+        const out = materializeSeries(before.series, before.todos.filter((t) => !gone.includes(t)), intervals, logicalToday(now, intervals), now, () => uid('todo'), undefined, pausesOf({ periods }));
+        set({ periods, todos: out.todos, intervals: out.intervals, undoData: before, lastReply: { text: `${name} ${input.id ? '고쳤어' : '넣었어'}.`, at: now, undo: true } });
+      },
+
+      removePeriod: (id) => {
+        const now = Date.now();
+        const before = pickData(get());
+        const periods = before.periods.filter((x) => x.id !== id);
+        const out = materializeSeries(before.series, before.todos, before.intervals, logicalToday(now, before.intervals), now, () => uid('todo'), undefined, pausesOf({ periods }));
+        set({ periods, todos: out.todos, intervals: out.intervals, undoData: before, lastReply: { text: '기간을 지웠어.', at: now, undo: true } });
+      },
+
       removeFocus: (id) => set({ focus: get().focus.filter((f) => f.id !== id) }),
 
       applyWeek: ({ plans: items, series: newSeries = [], focus: newFocus = [] }, reply) => {
@@ -532,7 +573,7 @@ export const useStore = create<Store>()(
           made.push(one);
         }
         if (made.length) {
-          const out = materializeSeries(made, todos, intervals, logicalToday(now, intervals), now, () => uid('todo'));
+          const out = materializeSeries(made, todos, intervals, logicalToday(now, intervals), now, () => uid('todo'), undefined, pausesOf(s));
           todos = out.todos;
           intervals = out.intervals;
         }
@@ -635,6 +676,53 @@ export const useStore = create<Store>()(
         set(finished ? { todos, cheerAt: now } : { todos });
       },
 
+      updateTodo: (id, patch) => {
+        const now = Date.now();
+        const before = pickData(get());
+        const old = before.todos.find((t) => t.id === id);
+        if (!old) return;
+        const next: Todo = { ...old, ...patch };
+        if (patch.text !== undefined) next.text = patch.text.trim().slice(0, 80) || old.text;
+        if (patch.place !== undefined && !patch.place.trim()) delete next.place;
+        if (next.start !== undefined && next.end !== undefined && next.end <= next.start) return;
+        let intervals = before.intervals;
+        // 격자에 칠해 둔 계획을 옛 자리에서 지우고 새 자리에 칠한다(지난 시간은 건드리지 않는다).
+        if (old.type === 'range' && old.activityId && old.start !== undefined && old.end !== undefined) {
+          intervals = subtract(intervals, Math.max(old.start, now), old.end, (iv) => iv.kind === 'plan' && iv.activityId === old.activityId, now);
+        }
+        if (next.type === 'range' && next.activityId && next.start !== undefined && next.end !== undefined && next.end > now) {
+          intervals = subtract(intervals, Math.max(next.start, now), next.end, (iv) => iv.kind === 'plan', now);
+          intervals = mergeAdd(intervals, { activityId: next.activityId, kind: 'plan', start: Math.max(next.start, now), end: next.end, source: 'paint' });
+        }
+        // 반복 일정의 하루를 옮기면 그날은 반복에서 떼어 낸다(다시 만들어지지 않게 원래 날은 건너뛴다).
+        let series = before.series;
+        if (old.seriesId && (next.start !== old.start || next.end !== old.end || next.due !== old.due)) {
+          series = series.map((s) => (s.id === old.seriesId && old.due !== null ? { ...s, skip: [...new Set([...s.skip, old.due])] } : s));
+          delete next.seriesId;
+        }
+        set({ todos: before.todos.map((t) => (t.id === id ? next : t)), intervals, series, undoData: before, lastReply: { text: '고쳤어.', at: now, undo: true } });
+      },
+
+      updateSeries: (id, patch) => {
+        const now = Date.now();
+        const before = pickData(get());
+        const old = before.series.find((s) => s.id === id);
+        if (!old) return;
+        const next: Series = { ...old, ...patch };
+        if (patch.text !== undefined) next.text = patch.text.trim().slice(0, 80) || old.text;
+        if (!next.days.length || (next.endMin !== null && next.endMin <= next.startMin)) return;
+        // 앞으로의 안 한 날들(과 그 계획 칠)을 지우고 새 모양으로 다시 만든다. 지난 날·끝낸 날은 그대로.
+        const gone = before.todos.filter((t) => t.seriesId === id && !t.done && (t.start ?? 0) > now);
+        let intervals = before.intervals;
+        for (const t of gone) if (t.start !== undefined && t.end !== undefined && t.activityId) intervals = subtract(intervals, t.start, t.end, (iv) => iv.kind === 'plan' && iv.activityId === t.activityId, now);
+        let todos = before.todos.filter((t) => !gone.includes(t));
+        const series = before.series.map((s) => (s.id === id ? next : s));
+        const out = materializeSeries([next], todos, intervals, logicalToday(now, intervals), now, () => uid('todo'), undefined, pausesOf(before));
+        todos = out.todos;
+        intervals = out.intervals;
+        set({ series, todos, intervals, undoData: before, lastReply: { text: '반복 일정을 고쳤어.', at: now, undo: true } });
+      },
+
       removeTodo: (id) => {
         const before = pickData(get());
         const t = before.todos.find((x) => x.id === id);
@@ -705,6 +793,27 @@ export const useStore = create<Store>()(
         set({ samples: d.samples });
       },
 
+      setActivityColor: (id, color) => {
+        if (!/^#[0-9a-fA-F]{6}$/.test(color)) return;
+        set({ activities: get().activities.map((a) => (a.id === id ? { ...a, color: color.toUpperCase() } : a)) });
+      },
+
+      moveActivity: (id, dir) => {
+        const list = get().activities;
+        const me = list.find((a) => a.id === id);
+        if (!me || id === SLEEP_ID) return;
+        const sibs = list.filter((a) => a.parentId === me.parentId && a.id !== SLEEP_ID);
+        const i = sibs.indexOf(me);
+        const other = sibs[i + dir];
+        if (!other) return;
+        const ia = list.indexOf(me);
+        const ib = list.indexOf(other);
+        const next = [...list];
+        next[ia] = other;
+        next[ib] = me;
+        set({ activities: next });
+      },
+
       addActivity: (name, parentId) => {
         const n = name.trim().slice(0, 20);
         if (!n) return;
@@ -759,7 +868,7 @@ export const useStore = create<Store>()(
         const s: Series = { ...input, id: uid('series'), skip: [], createdAt: now };
         const cur = get();
         const series = [...cur.series, s];
-        const out = materializeSeries([s], cur.todos, cur.intervals, logicalToday(now, cur.intervals), now, () => uid('todo'));
+        const out = materializeSeries([s], cur.todos, cur.intervals, logicalToday(now, cur.intervals), now, () => uid('todo'), undefined, pausesOf(cur));
         set({ series, todos: out.todos, intervals: out.intervals });
       },
 
@@ -782,7 +891,7 @@ export const useStore = create<Store>()(
         const cur = get();
         if (!cur.series.length) return;
         const now = Date.now();
-        const out = materializeSeries(cur.series, cur.todos, cur.intervals, logicalToday(now, cur.intervals), now, () => uid('todo'));
+        const out = materializeSeries(cur.series, cur.todos, cur.intervals, logicalToday(now, cur.intervals), now, () => uid('todo'), undefined, pausesOf(cur));
         if (out.todos !== cur.todos) set({ todos: out.todos, intervals: out.intervals });
       },
 
@@ -959,6 +1068,7 @@ export const useStore = create<Store>()(
             look: cur.look,
             series: arr(p.series).filter((x) => x && typeof x.id === 'string' && Array.isArray(x.days) && Number.isFinite(x.startMin)),
             focus: arr(p.focus).filter((f) => f && typeof f.word === 'string' && Number.isFinite(f.from) && Number.isFinite(f.to)),
+            periods: arr(p.periods).filter((x) => x && typeof x.id === 'string' && Number.isFinite(x.start) && Number.isFinite(x.end)),
             ai: cur.ai,
             apiOverride: cur.apiOverride,
             undoData: pickData(cur),

@@ -139,3 +139,59 @@ describe('한 주 짜기 확정(applyWeek)', () => {
     expect(useStore.getState().series).toHaveLength(1);
   });
 });
+
+describe('짠 계획 고치기', () => {
+  it('시각을 옮기면 격자의 계획 칠도 옮기고, 되돌릴 수 있다', async () => {
+    const { useStore, emptyData } = await import('../store');
+    useStore.setState({ ...emptyData(), undoData: null, lastReply: null });
+    const base = Date.now() + 3 * 86400_000;
+    const d0 = new Date(base);
+    const day = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate()).getTime();
+    const at = (h: number) => day + h * 3600_000;
+    const st = useStore.getState();
+    st.addTodo('면담', day, { type: 'range', start: at(14), end: at(15), activityId: 'study' });
+    const id = useStore.getState().todos[0].id;
+    st.updateTodo(id, { start: at(16), end: at(17), text: '교수님 면담', place: '연구실' });
+    const s = useStore.getState();
+    expect(s.todos[0]).toMatchObject({ text: '교수님 면담', start: at(16), end: at(17), place: '연구실' });
+    const plans = s.intervals.filter((iv) => iv.kind === 'plan');
+    expect(plans.map((iv) => [iv.start, iv.end])).toEqual([[at(16), at(17)]]);
+    s.undo();
+    expect(useStore.getState().todos[0].start).toBe(at(14));
+  });
+
+  it('매주 반복을 고치면 앞으로의 날들이 새 시각으로 바뀐다', async () => {
+    const { useStore, emptyData } = await import('../store');
+    useStore.setState({ ...emptyData(), undoData: null, lastReply: null });
+    const st = useStore.getState();
+    st.addSeries({ text: '수업', activityId: null, days: [0, 1, 2, 3, 4, 5, 6], startMin: 23 * 60 + 50, endMin: 24 * 60 - 1 });
+    const id = useStore.getState().series[0].id;
+    st.updateSeries(id, { startMin: 23 * 60 + 55, days: [0, 1, 2, 3, 4, 5, 6] });
+    const s = useStore.getState();
+    const future = s.todos.filter((t) => t.seriesId === id);
+    expect(future.length).toBeGreaterThan(10);
+    expect(future.every((t) => new Date(t.start!).getMinutes() === 55)).toBe(true);
+  });
+});
+
+describe('시험 기간', () => {
+  it('수업 쉬기를 켜면 그 기간의 반복 일정이 빠지고, 지우면 다시 생긴다', async () => {
+    const { useStore, emptyData } = await import('../store');
+    useStore.setState({ ...emptyData(), undoData: null, lastReply: null });
+    const st = useStore.getState();
+    st.addSeries({ text: '수업', activityId: null, days: [0, 1, 2, 3, 4, 5, 6], startMin: 23 * 60 + 50, endMin: 24 * 60 - 1 });
+    const n0 = useStore.getState().todos.length;
+    const d0 = new Date();
+    const today = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate()).getTime();
+    const start = today + 3 * 86400_000;
+    const end = today + 5 * 86400_000;
+    st.savePeriod({ name: '기말고사', start, end, pause: true });
+    let s = useStore.getState();
+    expect(s.periods).toHaveLength(1);
+    expect(s.todos.filter((t) => t.due! >= start && t.due! <= end)).toHaveLength(0);
+    expect(s.todos.length).toBe(n0 - 3);
+    s.removePeriod(s.periods[0].id);
+    s = useStore.getState();
+    expect(s.todos.length).toBe(n0);
+  });
+});

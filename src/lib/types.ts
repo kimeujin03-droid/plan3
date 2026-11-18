@@ -121,6 +121,17 @@ export interface Series {
   ext?: string;
 }
 
+/** 시험 기간 같은 날짜 구간. 달력에 띠로 보이고, 고르면 그동안 매주 고정 일정을 쉰다 */
+export interface Period {
+  id: string;
+  name: string;
+  /** 첫날·마지막 날(그날 0시, 양 끝 포함) */
+  start: number;
+  end: number;
+  /** 이 기간엔 매주 고정 일정(수업 등)을 만들지 않는다 */
+  pause: boolean;
+}
+
 /** 이 일은 이 시간대에 집중이 잘 된다(한 주 짜기가 먼저 이 시간대를 쓴다) */
 export interface Focus {
   id: string;
@@ -189,6 +200,7 @@ export interface Data {
   cellNotes: CellNote[];
   series: Series[];
   focus: Focus[];
+  periods: Period[];
   memories: Memory[];
   look: Look;
   timer: TimerState | null;

@@ -851,6 +851,8 @@ a.link {
 }
 
 .toast {
+  touch-action: none;
+  transition: opacity 0.1s;
   position: absolute;
   left: 20px;
   right: 20px;
@@ -2060,6 +2062,12 @@ a.link {
 }
 
 .wa-item {
+  width: 100%;
+  padding: 0;
+  background: none;
+  text-align: left;
+  color: inherit;
+  font: inherit;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -2119,6 +2127,7 @@ a.link {
 
 /* 한 주 짜기 */
 .wk-open {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -2315,4 +2324,241 @@ a.link {
 }
 .wk-box .sub {
   font-size: 12px;
+}
+
+/* 활동 색·순서 */
+.swatch-btn {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  border: 2px solid rgba(38, 35, 58, 0.15);
+}
+.order-btns {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.order-btns button {
+  width: 30px;
+  height: 18px;
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 9px;
+  line-height: 1;
+}
+.color-pick {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  padding: 4px 0 6px 36px;
+}
+.color-pick button,
+.color-custom {
+  aspect-ratio: 1;
+  border-radius: 10px;
+  border: 2px solid transparent;
+}
+.color-pick button[aria-pressed='true'] {
+  border-color: var(--ink);
+}
+.color-custom {
+  position: relative;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  font-size: 14px;
+  overflow: hidden;
+}
+.color-custom input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+
+/* 주간 격자 */
+.wg {
+  padding: 10px 8px 8px;
+  gap: 4px;
+}
+.wg-head {
+  display: grid;
+  grid-template-columns: 22px repeat(7, minmax(0, 1fr));
+  text-align: center;
+  font-size: 11px;
+  color: var(--sub);
+}
+.wg-head b {
+  display: block;
+  font-family: 'Jua', sans-serif;
+  font-weight: 400;
+  font-size: 15px;
+  color: var(--ink);
+}
+.wg-head [data-today='true'] b {
+  display: inline-block;
+  min-width: 24px;
+  border-radius: 12px;
+  background: var(--ink);
+  color: #fff;
+}
+.wg-body {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px repeat(7, minmax(0, 1fr));
+  max-height: 58dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.wg-hours {
+  position: relative;
+}
+.wg-hours span {
+  position: absolute;
+  right: 4px;
+  transform: translateY(-6px);
+  font-size: 10px;
+  color: var(--sub);
+}
+.wg-col {
+  position: relative;
+  border-left: 1px solid var(--line);
+  background-image: linear-gradient(var(--line) 1px, transparent 1px);
+  background-size: 100% 30px;
+}
+.wg-col[data-today='true'] {
+  background-color: #f7f5ff;
+}
+.wg-col i,
+.wg-legend i {
+  position: absolute;
+  display: block;
+  border-radius: 3px;
+}
+.wg-plan {
+  left: 1px;
+  width: calc(50% - 1px);
+  border-left: 2px solid;
+  box-sizing: border-box;
+}
+.wg-exec {
+  right: 1px;
+  width: calc(50% - 2px);
+}
+.wg-todo,
+.wg-hit {
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  padding: 1px 2px;
+  border-radius: 4px;
+  font-size: 9px;
+  line-height: 11px;
+  text-align: left;
+  overflow: hidden;
+  word-break: keep-all;
+  color: var(--ink);
+}
+.wg-todo {
+  border: 1.5px dashed var(--sub);
+  background: rgba(255, 255, 255, 0.7);
+}
+.wg-hit {
+  background: transparent;
+}
+.wg-now {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #e5484d;
+}
+.wg-legend {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--sub);
+  padding-top: 4px;
+}
+.wg-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.wg-legend i {
+  position: static;
+  width: 12px;
+  height: 12px;
+}
+.wg-legend .wg-dash {
+  border: 1.5px dashed var(--sub);
+}
+
+/* 기간(시험 기간) */
+.period-bar {
+  flex-shrink: 0;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.period-chip {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: #fff4d6;
+  font-size: 12px;
+  text-align: left;
+}
+.period-chip b {
+  font-family: 'Jua', sans-serif;
+  font-weight: 400;
+  font-size: 14px;
+}
+.period-chip.now {
+  background: #ffe2a8;
+}
+.period-add {
+  flex: none;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 14px;
+  background: var(--card);
+  font-size: 13px;
+  color: var(--sub);
+}
+.cal-day[data-period='true'],
+.wa-row[data-period='true'] {
+  background: #fff6e0;
+}
+.wg-head [data-period='true'] {
+  background: #fff6e0;
+  border-radius: 8px;
+}
+.cal-day u {
+  display: block;
+  text-decoration: none;
+  font-size: 9px;
+  color: #a06a00;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.wk-pause {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--sub);
+}
+.wk-pause input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--ink);
 }

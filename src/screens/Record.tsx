@@ -47,6 +47,9 @@ export function Record({ now }: { now: number }) {
   const [kind, setKind] = useState<Kind>('exec');
   // 지우개는 지금 고른 종류만 지운다: 한 일이면 한 일만, 계획이면 계획만.
   const [erasing, setErasing] = useState(false);
+  /** 지우개로 지울 활동('' = 전부). 겹친 일정 중 하나만 지우고 싶을 때 */
+  const [eraseTarget, setEraseTarget] = useState('');
+  const intervals = useStore((s) => s.intervals);
   const [actId, setActId] = useState(activities[0].id);
   // 한마디: 먼저 누른 칸
   const [anchor, setAnchor] = useState<number | null>(null);
@@ -104,10 +107,19 @@ export function Record({ now }: { now: number }) {
                   </button>
                 ))}
               </div>
-              {!say && <Eraser on={erasing} label={kind === 'plan' ? '계획' : '한 일'} onToggle={() => setErasing(!erasing)} />}
+              {!say && <Eraser on={erasing} label={kind === 'plan' ? '계획' : '한 일'} onToggle={() => { setErasing(!erasing); setEraseTarget(''); }} />}
             </div>
 
-            {erasing && <div className="erase-note">{kind === 'plan' ? '계획' : '한 일'}만 지우는 중 · 지우개를 다시 누르면 꺼져</div>}
+            {erasing && (
+              <EraseTargets
+                kind={kind === 'plan' ? 'plan' : 'exec'}
+                day={day}
+                value={eraseTarget}
+                onChange={setEraseTarget}
+                ids={[...new Set(intervals.filter((iv) => iv.kind === (kind === 'plan' ? 'plan' : 'exec') && iv.start < addDays(day, 1) && (iv.end ?? now) > day).map((iv) => iv.activityId))]}
+                names={activities}
+              />
+            )}
             {!erasing && !say && <CategoryChips value={selected} onChange={setActId} />}
             <div className="hint">
               {say ? (
@@ -135,7 +147,7 @@ export function Record({ now }: { now: number }) {
             day={day}
             kind={kind === 'plan' ? 'plan' : 'exec'}
             erasing={erasing}
-            activityId={selected}
+            activityId={erasing ? eraseTarget : selected}
             now={now}
             select={say}
             anchor={anchor}
@@ -166,5 +178,47 @@ export function Record({ now }: { now: number }) {
         />
       )}
     </>
+  );
+}
+
+/** 지우개가 지울 것: 전부, 또는 그날 칠해진 활동 하나만(겹친 일정을 같이 지우지 않게) */
+function EraseTargets({
+  kind,
+  value,
+  onChange,
+  ids,
+  names,
+}: {
+  kind: 'plan' | 'exec';
+  day: number;
+  value: string;
+  onChange: (id: string) => void;
+  ids: string[];
+  names: { id: string; name: string; color: string }[];
+}) {
+  const label = kind === 'plan' ? '계획' : '한 일';
+  const target = names.find((a) => a.id === value);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div className="erase-note">
+        {target ? `${label} 중 ${target.name}만 지우는 중` : `${label}을 전부 지우는 중`} · 지우개를 다시 누르면 꺼져
+      </div>
+      {ids.length > 0 && (
+        <div className="chips" role="group" aria-label="지울 것">
+          <button className="chip" aria-pressed={!target} style={{ background: 'var(--card)' }} onClick={() => onChange('')}>
+            전부
+          </button>
+          {ids.map((id) => {
+            const a = names.find((x) => x.id === id);
+            if (!a) return null;
+            return (
+              <button key={id} className="chip" aria-pressed={value === id} style={{ background: a.color }} onClick={() => onChange(value === id ? '' : id)}>
+                {a.name}만
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }

@@ -25,6 +25,13 @@ export const LIFE_ACTIVITIES: Activity[] = [
 
 export const EXTRA_COLORS = ['#B8F0E9', '#FFCF9E', '#E3C4F5', '#C8EFA0', '#F5C6C6', '#BFD0FF'];
 
+/** 활동 색 고르기에서 보여 줄 색들(파스텔 위주, 격자에서 글씨가 읽히는 밝기) */
+export const PICK_COLORS = [
+  '#FFB3A1', '#FFB0D0', '#FFC2D4', '#F5C6C6', '#FFCF9E', '#FFD3B6', '#FFE169', '#FFE0A8',
+  '#C8EFA0', '#9CE8C4', '#B8F0E9', '#C9E7FF', '#A6D2FF', '#BFD0FF', '#C9B8FF', '#E3C4F5',
+  '#E8D5C4', '#D5D9E8', '#E0E0EA', '#B5B3C9',
+];
+
 export const FOCUS_SHADE: Record<number, string> = {
   1: '#EDE7FF',
   2: '#D9CCFF',

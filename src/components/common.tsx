@@ -157,6 +157,8 @@ export function Toast() {
   const undo = useStore((s) => s.undo);
   const dismiss = useStore((s) => s.dismissReply);
   const showUndo = !!reply?.undo && canUndo && !thinking;
+  const drag = useRef<{ x: number; y: number; id: number } | null>(null);
+  const swiped = useRef(false);
 
   useEffect(() => {
     if (!reply || thinking) return;
@@ -166,7 +168,47 @@ export function Toast() {
 
   if (!reply) return null;
   return (
-    <div className="toast" role="status" aria-live="polite">
+    <div
+      className="toast"
+      role="status"
+      aria-live="polite"
+      // 옆이나 아래로 밀면 닫힌다
+      onPointerDown={(e) => {
+        drag.current = { x: e.clientX, y: e.clientY, id: e.pointerId };
+      }}
+      onPointerMove={(e) => {
+        const d = drag.current;
+        if (!d || d.id !== e.pointerId) return;
+        const dx = e.clientX - d.x;
+        const dy = e.clientY - d.y;
+        (e.currentTarget as HTMLElement).style.transform = Math.abs(dx) > Math.abs(dy) ? `translateX(${dx}px)` : dy > 0 ? `translateY(${dy}px)` : '';
+        (e.currentTarget as HTMLElement).style.opacity = String(Math.max(0.3, 1 - Math.max(Math.abs(dx), dy) / 200));
+      }}
+      onPointerUp={(e) => {
+        const d = drag.current;
+        drag.current = null;
+        const el = e.currentTarget as HTMLElement;
+        if (d && (Math.abs(e.clientX - d.x) > 60 || e.clientY - d.y > 30)) {
+          swiped.current = true;
+          dismiss();
+        }
+        el.style.transform = '';
+        el.style.opacity = '';
+      }}
+      onPointerCancel={(e) => {
+        drag.current = null;
+        (e.currentTarget as HTMLElement).style.transform = '';
+        (e.currentTarget as HTMLElement).style.opacity = '';
+      }}
+      onClickCapture={(e) => {
+        // 밀어서 닫은 손짓이 '되돌리기'를 누른 것으로 잡히지 않게
+        if (swiped.current) {
+          swiped.current = false;
+          e.stopPropagation();
+          e.preventDefault();
+        }
+      }}
+    >
       <button className="toast-text" onClick={dismiss} aria-label={`${reply.text} 닫기`}>
         {reply.text}
       </button>

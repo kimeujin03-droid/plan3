@@ -50,11 +50,18 @@ export interface WeekPref {
   to: number;
 }
 
+export interface WeekPeriod {
+  name: string;
+  from: string;
+  until: string;
+}
+
 export interface WeekResult {
   tasks: WeekTask[];
   events: WeekEvent[];
   fixed: WeekFixed[];
   prefs: WeekPref[];
+  periods: WeekPeriod[];
 }
 
 /** 이미 잡혀 있는 시간 */
@@ -402,12 +409,13 @@ export async function aiWeek(
       signal: ctrl.signal,
     });
     if (!res.ok) return null;
-    const data = (await res.json()) as { tasks?: unknown; events?: unknown; fixed?: unknown; prefs?: unknown };
+    const data = (await res.json()) as { tasks?: unknown; events?: unknown; fixed?: unknown; prefs?: unknown; periods?: unknown };
     const tasks = (Array.isArray(data.tasks) ? data.tasks : []).filter((t): t is WeekTask => !!t && typeof (t as WeekTask).text === 'string');
     const events = (Array.isArray(data.events) ? data.events : []).filter((e): e is WeekEvent => !!e && typeof (e as WeekEvent).text === 'string');
     const fixed = (Array.isArray(data.fixed) ? data.fixed : []).filter((f): f is WeekFixed => !!f && typeof (f as WeekFixed).text === 'string' && Array.isArray((f as WeekFixed).days));
     const prefs = (Array.isArray(data.prefs) ? data.prefs : []).filter((p): p is WeekPref => !!p && typeof (p as WeekPref).what === 'string');
-    return { tasks: tasks.map((t) => ({ ...t, minutes: Number(t.minutes) || 0, chunk: Number(t.chunk) || 0 })), events, fixed, prefs };
+    const periods = (Array.isArray(data.periods) ? data.periods : []).filter((p): p is WeekPeriod => !!p && typeof (p as WeekPeriod).name === 'string' && typeof (p as WeekPeriod).from === 'string');
+    return { tasks: tasks.map((t) => ({ ...t, minutes: Number(t.minutes) || 0, chunk: Number(t.chunk) || 0 })), events, fixed, prefs, periods };
   } catch {
     return null;
   } finally {

@@ -6,7 +6,7 @@ import { shrink } from '../lib/photos';
 import { describeSeries } from '../lib/series';
 import { DAY, addDays, dayStart, fmtHM } from '../lib/time';
 import type { Series } from '../lib/types';
-import { aiWeek, busyOf, dayOf, fixedBusy, minOf, pack, ymd, type Draft, type WeekFixed, type WeekPref } from '../lib/weekplan';
+import { aiWeek, busyOf, dayOf, fixedBusy, minOf, pack, ymd, type Draft, type WeekFixed, type WeekPeriod, type WeekPref } from '../lib/weekplan';
 import { useStore, type PlanItem } from '../store';
 
 const DOW = '일월화수목금토';
@@ -168,6 +168,8 @@ export function WeekPlanSheet({ initialText = '', onClose }: { initialText?: str
   const setAi = useStore((s) => s.setAi);
   const apiOverride = useStore((s) => s.apiOverride);
   const applyWeek = useStore((s) => s.applyWeek);
+  const savePeriod = useStore((s) => s.savePeriod);
+  const periodsNow = useStore((s) => s.periods);
   const [clock] = useState(() => Date.now());
   const today = logicalToday(clock, intervals);
   const busy = useMemo(() => busyOf(todos, intervals, activities, today), [todos, intervals, activities, today]);
@@ -182,6 +184,7 @@ export function WeekPlanSheet({ initialText = '', onClose }: { initialText?: str
   const [draft, setDraft] = useState<Draft | null>(null);
   const [fixed, setFixed] = useState<WeekFixed[]>([]);
   const [prefs, setPrefs] = useState<WeekPref[]>([]);
+  const [newPeriods, setNewPeriods] = useState<(WeekPeriod & { pause: boolean })[]>([]);
   const [fresh, setFresh] = useState<ReturnType<typeof fixedBusy>>([]);
   const [off, setOff] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<string | null>(null);
@@ -208,16 +211,23 @@ export function WeekPlanSheet({ initialText = '', onClose }: { initialText?: str
     }
     setPhase('thinking');
     const got = await aiWeek(apiOverride || DEFAULT_API, text, today, busy, activities, image ? { mime: image.mime, data: image.data } : undefined);
-    if (!got || (!got.tasks.length && !got.events.length && !got.fixed.length && !got.prefs.length)) {
+    if (!got || (!got.tasks.length && !got.events.length && !got.fixed.length && !got.prefs.length && !got.periods.length)) {
       setPhase('write');
       setError(got ? '아무것도 못 찾았어. "무엇을, 얼마나, 언제"를 넣어 다시 적거나, 사진을 더 크게 찍어 줘.' : '서버가 답을 안 줘. 잠시 뒤에 다시 눌러 줘.');
       return;
     }
-    const fb = fixedBusy(got.fixed, today, period);
+    const np = got.periods.map((p) => ({ ...p, pause: /시험|고사/.test(p.name) }));
+    // 수업을 쉬는 기간(이미 있는 것 + 새로 말한 시험 기간)에는 새 시간표도 비운다.
+    const pauses = [
+      ...periodsNow.filter((p) => p.pause),
+      ...np.filter((p) => p.pause).map((p) => ({ start: dayOf(p.from) ?? 0, end: dayOf(p.until) ?? 0 })),
+    ];
+    const fb = fixedBusy(got.fixed, today, period).filter((b) => !pauses.some((p) => dayStart(b.start) >= p.start && dayStart(b.start) <= p.end));
     const allFocus = [...focus.filter((f) => !got.prefs.some((p) => p.what === f.word)), ...got.prefs.map((p) => ({ word: p.what, from: p.from, to: p.to }))];
     setDraft(pack(got.tasks, got.events, [...busy, ...fb], { today, now: Date.now(), open: hours[0], close: hours[1], activities, focus: allFocus }));
     setFixed(got.fixed);
     setPrefs(got.prefs);
+    setNewPeriods(np);
     setFresh(fb);
     setOff(new Set());
     setEditing(null);
@@ -252,8 +262,9 @@ export function WeekPlanSheet({ initialText = '', onClose }: { initialText?: str
 
   const keptFixed = fixed.filter((_, i) => !off.has(`f${i}`));
   const keptPrefs = prefs.filter((_, i) => !off.has(`p${i}`));
+  const keptPeriods = newPeriods.filter((_, i) => !off.has(`r${i}`));
   const kept = draft
-    ? draft.blocks.filter((b) => !off.has(b.key)).length + draft.loose.filter((l) => !off.has(l.key)).length + keptFixed.length + keptPrefs.length
+    ? draft.blocks.filter((b) => !off.has(b.key)).length + draft.loose.filter((l) => !off.has(l.key)).length + keptFixed.length + keptPrefs.length + keptPeriods.length
     : 0;
 
   const commit = () => {
@@ -277,6 +288,11 @@ export function WeekPlanSheet({ initialText = '', onClose }: { initialText?: str
         until: (f.until && dayOf(f.until)) || period,
       };
     });
+    for (const p of keptPeriods) {
+      const s = dayOf(p.from);
+      const e = dayOf(p.until);
+      if (s !== null && e !== null) savePeriod({ name: p.name, start: s, end: e, pause: p.pause });
+    }
     applyWeek({ plans, series, focus: keptPrefs.map((p) => ({ word: p.what, from: p.from, to: p.to })) }, '{n}개 넣었어');
     onClose();
   };
@@ -424,6 +440,27 @@ export function WeekPlanSheet({ initialText = '', onClose }: { initialText?: str
                   </label>
                 ))}
                 {fixed.some((f) => !f.until) && <PeriodPicker today={today} value={period} onChange={setPeriodSaved} />}
+              </div>
+            )}
+            {newPeriods.length > 0 && (
+              <div className="wk-box">
+                <div className="wk-head">기간</div>
+                {newPeriods.map((p, i) => (
+                  <div key={i} className={`wk-row new${off.has(`r${i}`) ? ' off' : ''}`}>
+                    <input type="checkbox" aria-label={`${p.name} 기간 넣기`} checked={!off.has(`r${i}`)} onChange={() => toggle(`r${i}`)} />
+                    <span className="grow wk-text">
+                      <b>{p.name}</b> <span className="sub">{p.from.slice(5).replace('-', '/')}~{p.until.slice(5).replace('-', '/')}</span>
+                    </span>
+                    <label className="wk-pause">
+                      <input
+                        type="checkbox"
+                        checked={p.pause}
+                        onChange={(e) => setNewPeriods(newPeriods.map((x, j) => (j === i ? { ...x, pause: e.target.checked } : x)))}
+                      />
+                      수업 쉼
+                    </label>
+                  </div>
+                ))}
               </div>
             )}
             {prefs.length > 0 && (

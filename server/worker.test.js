@@ -129,6 +129,7 @@ describe('한 주 짜기 /v1/week', () => {
       events: [{ text: '치과', date: '2026-11-20', start: '15:00' }, { text: '먼 약속', date: '2027-01-01', start: '10:00' }],
       fixed: [],
       prefs: [],
+      periods: [],
     });
     const sent = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(JSON.parse(sent.contents[0].parts[0].text).events[0].text).toBe('기초미적분학');
@@ -146,6 +147,7 @@ describe('한 주 짜기 /v1/week', () => {
           { text: '끝이 앞', days: [2], start: '13:00', end: '12:00', until: '2030-01-01' },
         ],
         prefs: [{ what: '공부', from: 9, to: 12 }, { what: '이상', from: 20, to: 10 }],
+        periods: [{ name: '기말고사', from: '2026-12-08', until: '2026-12-19' }, { name: '거꾸로', from: '2026-12-19', until: '2026-12-08' }],
       }),
     );
     vi.stubGlobal('fetch', fetchMock);
@@ -159,6 +161,7 @@ describe('한 주 짜기 /v1/week', () => {
         { text: '끝이 앞', days: [2], start: '13:00' },
       ],
       prefs: [{ what: '공부', from: 9, to: 12 }],
+      periods: [{ name: '기말고사', from: '2026-12-08', until: '2026-12-19' }],
     });
     const parts = JSON.parse(fetchMock.mock.calls[0][1].body).contents[0].parts;
     expect(parts[1]).toEqual({ inlineData: { mimeType: 'image/jpeg', data: 'aGVsbG8=' } });

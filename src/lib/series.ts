@@ -30,6 +30,8 @@ export function materializeSeries(
   now: number,
   newId: () => string,
   days = SERIES_AHEAD_DAYS,
+  /** 이 구간(그날 0시, 양 끝 포함)에는 만들지 않는다: 시험 기간처럼 */
+  pauses: { start: number; end: number }[] = [],
 ): { todos: Todo[]; intervals: Interval[] } {
   let outTodos = todos;
   let outIv = intervals;
@@ -41,6 +43,7 @@ export function materializeSeries(
       if (s.skip.includes(day)) continue;
       if (s.from !== undefined && day < s.from) continue;
       if (s.until !== undefined && day > s.until) continue;
+      if (pauses.some((p) => day >= p.start && day <= p.end)) continue;
       if (outTodos.some((t) => t.seriesId === s.id && t.due === day)) continue;
       const start = day + s.startMin * MIN;
       const end = s.endMin !== null ? day + s.endMin * MIN : undefined;

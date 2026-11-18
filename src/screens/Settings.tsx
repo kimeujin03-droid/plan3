@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import pkg from '../../package.json';
 import { DEFAULT_API } from '../lib/ai';
 import { exactAlarmStatus, openExactAlarmSetting, requestNudgePermission } from '../lib/notify';
-import { SLEEP_ID } from '../lib/palette';
+import { PICK_COLORS, SLEEP_ID } from '../lib/palette';
 import { listBackups, readBackup, shareExport } from '../lib/storage';
 import { Moa } from '../components/Moa';
 import type { Look } from '../lib/types';
@@ -18,11 +18,25 @@ function ActivityRow({ id, onMsg, onAddChild }: { id: string; onMsg: (m: string)
   const a = useStore((s) => s.activities.find((x) => x.id === id));
   const rename = useStore((s) => s.renameActivity);
   const remove = useStore((s) => s.removeActivity);
+  const setColor = useStore((s) => s.setActivityColor);
+  const move = useStore((s) => s.moveActivity);
+  const [picking, setPicking] = useState(false);
   if (!a) return null;
   return (
-    <div className="row">
-      <div className="swatch" style={{ background: a.color, width: 22, height: 22, borderRadius: 8 }} />
-      <input className="field grow" aria-label={`${a.name} 이름`} defaultValue={a.name} maxLength={20} onBlur={(e) => rename(a.id, e.target.value)} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div className="row" style={{ gap: 6 }}>
+      <button className="swatch-btn" style={{ background: a.color }} aria-label={`${a.name} 색 바꾸기`} aria-expanded={picking} onClick={() => setPicking(!picking)} />
+      <input className="field grow" style={{ minWidth: 0 }} aria-label={`${a.name} 이름`} defaultValue={a.name} maxLength={20} onBlur={(e) => rename(a.id, e.target.value)} />
+      {a.id !== SLEEP_ID && (
+        <div className="order-btns">
+          <button aria-label={`${a.name} 위로`} onClick={() => move(a.id, -1)}>
+            ▲
+          </button>
+          <button aria-label={`${a.name} 아래로`} onClick={() => move(a.id, 1)}>
+            ▼
+          </button>
+        </div>
+      )}
       {onAddChild && (
         <button className="icon-btn" style={{ background: 'var(--bg)' }} aria-label={`${a.name}에 하위 활동 추가`} onClick={onAddChild}>
           <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -44,6 +58,27 @@ function ActivityRow({ id, onMsg, onAddChild }: { id: string; onMsg: (m: string)
           <line x1="12" y1="2" x2="2" y2="12" />
         </svg>
       </button>
+    </div>
+    {picking && (
+      <div className="color-pick" role="group" aria-label={`${a.name} 색`}>
+        {PICK_COLORS.map((c) => (
+          <button
+            key={c}
+            aria-label={c}
+            aria-pressed={a.color.toUpperCase() === c}
+            style={{ background: c }}
+            onClick={() => {
+              setColor(a.id, c);
+              setPicking(false);
+            }}
+          />
+        ))}
+        <label className="color-custom" aria-label="다른 색">
+          ＋
+          <input type="color" value={a.color} onChange={(e) => setColor(a.id, e.target.value)} />
+        </label>
+      </div>
+    )}
     </div>
   );
 }

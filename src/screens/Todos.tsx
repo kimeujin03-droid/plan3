@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { soft } from '../lib/palette';
 import { Chevron } from '../components/common';
 import { CategoryChips } from '../components/Pickers';
 import { logicalDayEnd, logicalToday } from '../lib/day';
@@ -24,7 +25,7 @@ import {
 } from '../lib/time';
 import { aiSteps, DEFAULT_API } from '../lib/ai';
 import { describeSeries } from '../lib/series';
-import type { Activity, Interval, Todo } from '../lib/types';
+import type { Activity, Interval, Series, Todo } from '../lib/types';
 import { percentOf, useStore } from '../store';
 
 const DOW = ['월', '화', '수', '목', '금', '토', '일'];
@@ -38,6 +39,7 @@ const TYPES: { id: PlanType; name: string; hint: string }[] = [
 export { byUrgency, whenOf, type Urgency } from '../lib/when';
 import { byUrgency, whenOf } from '../lib/when';
 import { WeekPlanSheet } from '../components/WeekPlanSheet';
+import { PeriodBar, periodsOn } from '../components/Periods';
 
 /** 오늘 그 활동(하위 활동 포함)을 실제로 한 시간(ms) */
 export function doneToday(todo: Todo, intervals: Interval[], activities: Activity[], today: number): number {
@@ -220,6 +222,7 @@ export function TodoRow({ todo, today, clock }: { todo: Todo; today: number; clo
   const remove = useStore((s) => s.removeTodo);
   // 지우기는 완료와 헷갈리지 않게, 글자를 눌러 펼쳤을 때만 보인다.
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
   const when = todo.done ? null : whenOf(todo, today, clock);
   // 일정(약속·기상)은 진행도가 의미 없다. 마감과 기한 없는 일에만 10칸을 보여준다.
   // 진행률은 켠 일(또는 단계로 쪼갠 일)에만. 약속·장보기는 체크만으로 충분하다.
@@ -249,9 +252,15 @@ export function TodoRow({ todo, today, clock }: { todo: Todo; today: number; clo
                 진행률
               </button>
             )}
+            {!todo.done && (
+              <button className="pill" style={{ background: 'var(--bg)', minHeight: 36 }} onClick={() => setEditing(true)}>
+                고치기
+              </button>
+            )}
             <RemoveButton onClick={() => remove(todo.id)} />
           </div>
         )}
+        {editing && <EditSheet todo={todo} onClose={() => setEditing(false)} />}
         {(when || todo.place) && (
           <div className="todo-meta">
             {when && <span className={`when ${when.level}`}>{when.text}</span>}
@@ -454,6 +463,169 @@ function AddSheet({ today, clock, fixedDue, onClose }: { today: number; clock: n
   );
 }
 
+const hmOf = (ms: number) => `${String(new Date(ms).getHours()).padStart(2, '0')}:${String(new Date(ms).getMinutes()).padStart(2, '0')}`;
+const minOfHM = (hm: string) => Number(hm.slice(0, 2)) * 60 + Number(hm.slice(3, 5));
+const hmOfMin = (m: number) => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+/** 짠 계획 고치기: 이름·장소, 시각을 정한 계획은 날짜·시각·활동, 마감은 마감 시각, 하루 몇 시간은 시간 */
+function EditSheet({ todo, onClose }: { todo: Todo; onClose: () => void }) {
+  const update = useStore((s) => s.updateTodo);
+  const [text, setText] = useState(todo.text);
+  const [place, setPlace] = useState(todo.place ?? '');
+  const isRange = todo.start !== undefined;
+  const [day, setDay] = useState(todo.due ?? dayStart(todo.start ?? Date.now()));
+  const [from, setFrom] = useState(todo.start !== undefined ? hmOf(todo.start) : '14:00');
+  const [to, setTo] = useState(todo.end !== undefined ? hmOf(todo.end) : '');
+  const [dueAt, setDueAt] = useState<number | null>(todo.dueAt ?? null);
+  const [noDue, setNoDue] = useState(todo.due === null);
+  const [dueDay, setDueDay] = useState(todo.due ?? dayStart(Date.now()));
+  const [hours, setHours] = useState((todo.minutes ?? 120) / 60);
+  const [actId, setActId] = useState(todo.activityId ?? '');
+  const bad = isRange && to !== '' && to <= from;
+
+  const save = () => {
+    if (bad) return;
+    const base = { text, place };
+    if (todo.type === 'hours') update(todo.id, { ...base, minutes: hours * 60 });
+    else if (isRange) {
+      const start = toMs(day, from);
+      update(todo.id, { ...base, due: day, start, ...(to ? { end: toMs(day, to) } : {}), ...(actId ? { activityId: actId } : {}) });
+    } else if (noDue) update(todo.id, { ...base, due: null, dueAt: undefined });
+    else if (dueAt !== null) update(todo.id, { ...base, due: dayStart(dueAt), dueAt });
+    else update(todo.id, { ...base, due: dueDay });
+    onClose();
+  };
+
+  return (
+    <div className="sheet-back" onPointerDown={onClose}>
+      <div className="sheet" role="dialog" aria-modal="true" aria-label="계획 고치기" onPointerDown={(e) => e.stopPropagation()}>
+        <div className="row between">
+          <div className="jua" style={{ fontSize: 20 }}>
+            계획 고치기
+          </div>
+          <button className="pill" style={{ background: 'var(--bg)' }} onClick={onClose}>
+            닫기
+          </button>
+        </div>
+        <input className="field" aria-label="이름" maxLength={80} value={text} onChange={(e) => setText(e.target.value)} />
+        {isRange && (
+          <>
+            <PickerButton label="날짜" value={fmtDayLong(day)} type="date" onChange={(v) => setDay(fromDateInput(v) ?? day)} wide />
+            <div className="time-pair">
+              <PickerButton label="시작" value={fmtAmPm(toMs(day, from))} type="time" onChange={(v) => v && setFrom(v)} />
+              <span aria-hidden="true">→</span>
+              <PickerButton label="끝" value={to ? fmtAmPm(toMs(day, to)) : '없음'} type="time" onChange={(v) => v && setTo(v)} />
+            </div>
+            {bad && <div className="hint" style={{ color: '#8a2444' }}>끝 시각이 시작보다 뒤여야 해.</div>}
+            {todo.seriesId && <div className="hint">매주 반복 중 이날만 바뀌어. 매주 다 바꾸려면 아래 '반복' 목록에서 고쳐 줘.</div>}
+          </>
+        )}
+        {!isRange && todo.type !== 'hours' && (
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" className="chip" style={{ background: 'var(--bg)' }} aria-pressed={noDue} onClick={() => setNoDue(true)}>
+              기한 없음
+            </button>
+            <PickerButton
+              label="마감"
+              value={
+                noDue ? '날짜·시간 고르기' : dueAt !== null ? `${fmtMD(dueAt)} (${'일월화수목금토'[new Date(dueAt).getDay()]}) ${fmtAmPm(dueAt)}` : `${fmtDayLong(dueDay)} 안에`
+              }
+              type="datetime-local"
+              onChange={(v) => {
+                const at = fromDateTimeInput(v);
+                if (at === null) return;
+                setDueAt(at);
+                setDueDay(dayStart(at));
+                setNoDue(false);
+              }}
+              wide
+            />
+          </div>
+        )}
+        {todo.type === 'hours' && (
+          <div className="row" style={{ gap: 12, justifyContent: 'center' }}>
+            <button type="button" className="icon-btn" style={{ background: 'var(--bg)' }} aria-label="30분 줄이기" onClick={() => setHours(Math.max(0.5, hours - 0.5))}>
+              −
+            </button>
+            <div className="jua" style={{ fontSize: 20, minWidth: 110, textAlign: 'center' }}>
+              하루 {hours}시간
+            </div>
+            <button type="button" className="icon-btn" style={{ background: 'var(--bg)' }} aria-label="30분 늘리기" onClick={() => setHours(Math.min(12, hours + 0.5))}>
+              +
+            </button>
+          </div>
+        )}
+        {todo.type !== 'hours' && <PlaceInput value={place} onChange={setPlace} />}
+        {isRange && <CategoryChips value={actId} onChange={setActId} />}
+        <button className="big-btn ink" disabled={bad || !text.trim()} onClick={save}>
+          고치기
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** 매주 고정 일정 고치기: 이름·요일·시각·끝나는 날·장소. 앞으로의 날들이 새 모양으로 바뀐다. */
+function SeriesSheet({ series, onClose }: { series: Series; onClose: () => void }) {
+  const update = useStore((s) => s.updateSeries);
+  const [text, setText] = useState(series.text);
+  const [days, setDays] = useState(series.days);
+  const [from, setFrom] = useState(hmOfMin(series.startMin));
+  const [to, setTo] = useState(series.endMin !== null ? hmOfMin(series.endMin) : '');
+  const [until, setUntil] = useState<number | null>(series.until ?? null);
+  const [place, setPlace] = useState(series.place ?? '');
+  const today = dayStart(Date.now());
+  const bad = (to !== '' && to <= from) || !days.length;
+  return (
+    <div className="sheet-back" onPointerDown={onClose}>
+      <div className="sheet" role="dialog" aria-modal="true" aria-label="반복 고치기" onPointerDown={(e) => e.stopPropagation()}>
+        <div className="row between">
+          <div className="jua" style={{ fontSize: 20 }}>
+            매주 반복 고치기
+          </div>
+          <button className="pill" style={{ background: 'var(--bg)' }} onClick={onClose}>
+            닫기
+          </button>
+        </div>
+        <input className="field" aria-label="이름" maxLength={80} value={text} onChange={(e) => setText(e.target.value)} />
+        <div className="repeat-row" role="group" aria-label="반복할 요일">
+          <span className="sub" style={{ fontSize: 12 }}>
+            요일
+          </span>
+          {[1, 2, 3, 4, 5, 6, 0].map((d) => (
+            <button key={d} type="button" aria-pressed={days.includes(d)} onClick={() => setDays(days.includes(d) ? days.filter((x) => x !== d) : [...days, d].sort())}>
+              {'일월화수목금토'[d]}
+            </button>
+          ))}
+        </div>
+        <div className="time-pair">
+          <PickerButton label="시작" value={fmtAmPm(toMs(today, from))} type="time" onChange={(v) => v && setFrom(v)} />
+          <span aria-hidden="true">→</span>
+          <PickerButton label="끝" value={to ? fmtAmPm(toMs(today, to)) : '없음'} type="time" onChange={(v) => v && setTo(v)} />
+        </div>
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <button type="button" className="chip" style={{ background: 'var(--bg)' }} aria-pressed={until === null} onClick={() => setUntil(null)}>
+            끝없이
+          </button>
+          <PickerButton label="끝나는 날" value={until === null ? '날짜 고르기' : fmtDayLong(until)} type="date" onChange={(v) => setUntil(fromDateInput(v) ?? until)} wide />
+        </div>
+        <PlaceInput value={place} onChange={setPlace} />
+        {bad && <div className="hint" style={{ color: '#8a2444' }}>{days.length ? '끝 시각이 시작보다 뒤여야 해.' : '요일을 하나는 골라 줘.'}</div>}
+        <button
+          className="big-btn ink"
+          disabled={bad || !text.trim()}
+          onClick={() => {
+            update(series.id, { text, days, startMin: minOfHM(from), endMin: to ? minOfHM(to) : null, place: place.trim() || undefined, until: until ?? undefined });
+            onClose();
+          }}
+        >
+          고치기
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Group({ title, todos, today, clock }: { title: string; todos: Todo[]; today: number; clock: number }) {
   if (!todos.length) return null;
   return (
@@ -472,6 +644,7 @@ function ListView({ today, clock }: { today: number; clock: number }) {
   const goals = todos.filter((t) => t.type === 'hours');
   const series = useStore((s) => s.series);
   const removeSeries = useStore((s) => s.removeSeries);
+  const [editSeries, setEditSeries] = useState<Series | null>(null);
   // 반복 일정은 오늘·내일 것만 목록에 둔다(나머지는 달력에서).
   const open = todos.filter((t) => !t.done && t.type !== 'hours' && !(t.seriesId && t.due !== null && t.due > today + DAY)).sort(byUrgency(today, clock));
   const done = todos.filter((t) => t.done && t.type !== 'hours').sort((a, b) => (b.doneAt ?? 0) - (a.doneAt ?? 0));
@@ -498,9 +671,13 @@ function ListView({ today, clock }: { today: number; clock: number }) {
                   {x.place && <span className="place">{x.place}</span>}
                 </div>
               </div>
+              <button className="pill" style={{ background: 'var(--bg)', minHeight: 36 }} aria-label={`${x.text} 반복 고치기`} onClick={() => setEditSeries(x)}>
+                고치기
+              </button>
               <RemoveButton onClick={() => removeSeries(x.id)} />
             </div>
           ))}
+          {editSeries && <SeriesSheet series={editSeries} onClose={() => setEditSeries(null)} />}
         </div>
       )}
       {done.length > 0 && (
@@ -523,6 +700,7 @@ function MonthView({ today, clock }: { today: number; clock: number }) {
   const cells: (number | null)[] = [...Array(lead).fill(null), ...Array.from({ length: count }, (_, i) => addDays(month, i))];
   while (cells.length % 7) cells.push(null);
   const dueOn = (d: number) => todos.filter((t) => t.due === d).sort(byUrgency(today, clock));
+  const periods = useStore((s) => s.periods);
 
   return (
     <>
@@ -557,8 +735,18 @@ function MonthView({ today, clock }: { today: number; clock: number }) {
             const left = list.filter((t) => !t.done);
             const hot = left.some((t) => ['urgent', 'late'].includes(whenOf(t, today, clock)?.level ?? ''));
             return (
-              <button key={i} className="cal-day" data-today={d === today} data-hot={hot} aria-pressed={picked === d} aria-label={`${fmtMD(d)}, 할 일 ${left.length}개`} onClick={() => setPicked(d)}>
+              <button
+                key={i}
+                className="cal-day"
+                data-today={d === today}
+                data-hot={hot}
+                data-period={periodsOn(periods, d).length > 0}
+                aria-pressed={picked === d}
+                aria-label={`${fmtMD(d)}, 할 일 ${left.length}개${periodsOn(periods, d).map((p) => `, ${p.name}`).join('')}`}
+                onClick={() => setPicked(d)}
+              >
                 <b>{new Date(d).getDate()}</b>
+                {periodsOn(periods, d).some((p) => p.start === d) && <u>{periodsOn(periods, d).find((p) => p.start === d)!.name}</u>}
                 {list.slice(0, 2).map((t) => (
                   <span key={t.id} data-done={t.done}>
                     {t.text}
@@ -588,11 +776,13 @@ function MonthView({ today, clock }: { today: number; clock: number }) {
 }
 
 /** 주간: 월~일 일곱 줄, 줄마다 그날 계획을 시간 순으로 */
-function WeekView({ today, clock }: { today: number; clock: number }) {
+function WeekView({ today, clock, grid = false }: { today: number; clock: number; grid?: boolean }) {
   const todos = useStore((s) => s.todos);
   const activities = useStore((s) => s.activities);
   const [week, setWeek] = useState(() => weekStart(today));
   const [addFor, setAddFor] = useState<number | null>(null);
+  const [editing, setEditing] = useState<Todo | null>(null);
+  const periods = useStore((s) => s.periods);
   const days = Array.from({ length: 7 }, (_, i) => addDays(week, i));
   const color = (t: Todo) => activities.find((a) => a.id === t.activityId)?.color;
   const timeOf = (t: Todo) => (t.start !== undefined ? fmtHM(t.start) + (t.end !== undefined ? `–${fmtHM(t.end)}` : '') : t.dueAt !== undefined ? `${fmtHM(t.dueAt)}까지` : '마감');
@@ -610,11 +800,12 @@ function WeekView({ today, clock }: { today: number; clock: number }) {
           <Chevron dir="right" />
         </button>
       </div>
-      <div className="card week-agenda">
+      {grid && <WeekGrid days={days} today={today} now={clock} onEdit={setEditing} />}
+      <div className="card week-agenda" hidden={grid}>
         {days.map((d, i) => {
           const list = todos.filter((t) => t.due === d && t.type !== 'hours').sort((x, y) => (x.start ?? x.dueAt ?? Infinity) - (y.start ?? y.dueAt ?? Infinity));
           return (
-            <div key={d} className="wa-row" data-today={d === today}>
+            <div key={d} className="wa-row" data-today={d === today} data-period={periodsOn(periods, d).length > 0}>
               <div className="wa-day">
                 <span>{DOW[i]}</span>
                 <b>{new Date(d).getDate()}</b>
@@ -624,12 +815,18 @@ function WeekView({ today, clock }: { today: number; clock: number }) {
                 {list.map((t) => {
                   const lv = whenOf(t, today, clock)?.level;
                   return (
-                    <div key={t.id} className={`wa-item${t.done ? ' done' : ''}${lv === 'urgent' || lv === 'late' ? ' hot' : ''}`}>
+                    <button
+                      key={t.id}
+                      type="button"
+                      aria-label={`${t.text} 고치기`}
+                      className={`wa-item${t.done ? ' done' : ''}${lv === 'urgent' || lv === 'late' ? ' hot' : ''}`}
+                      onClick={() => setEditing(t)}
+                    >
                       <i style={{ background: color(t) ?? 'var(--moa)' }} />
                       <span className="wa-time">{timeOf(t)}</span>
                       <span className="wa-text">{t.text}</span>
                       {t.place && <span className="wa-place">{t.place}</span>}
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -641,24 +838,146 @@ function WeekView({ today, clock }: { today: number; clock: number }) {
         })}
       </div>
       {addFor !== null && <AddSheet today={today} clock={clock} fixedDue={addFor} onClose={() => setAddFor(null)} />}
+      {editing && <EditSheet todo={editing} onClose={() => setEditing(null)} />}
     </>
   );
 }
 
+const CAL_KEY = 'moa-cal-mode';
+type CalMode = 'week' | 'grid' | 'month';
+
 function CalendarView({ today, clock }: { today: number; clock: number }) {
-  const [mode, setMode] = useState<'week' | 'month'>('week');
+  const [mode, setModeRaw] = useState<CalMode>(() => {
+    try {
+      const v = localStorage.getItem(CAL_KEY);
+      return v === 'grid' || v === 'month' ? v : 'week';
+    } catch {
+      return 'week';
+    }
+  });
+  const setMode = (m: CalMode) => {
+    setModeRaw(m);
+    try {
+      localStorage.setItem(CAL_KEY, m);
+    } catch {
+      /* 무시 */
+    }
+  };
   return (
     <>
-      <div className="seg thin" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+      <div className="seg thin" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
         <button aria-pressed={mode === 'week'} onClick={() => setMode('week')}>
-          주간
+          주간 목록
+        </button>
+        <button aria-pressed={mode === 'grid'} onClick={() => setMode('grid')}>
+          주간 격자
         </button>
         <button aria-pressed={mode === 'month'} onClick={() => setMode('month')}>
           월간
         </button>
       </div>
-      {mode === 'week' ? <WeekView today={today} clock={clock} /> : <MonthView today={today} clock={clock} />}
+      {mode === 'month' ? <MonthView today={today} clock={clock} /> : <WeekView today={today} clock={clock} grid={mode === 'grid'} />}
     </>
+  );
+}
+
+const GRID_HOUR = 30;
+
+/**
+ * 한 주를 격자로: 세로는 시각, 가로는 7일. 기록 화면처럼 계획은 연하게(왼쪽), 한 일은 진하게(오른쪽) 칠한다.
+ * 활동을 안 정한 시간 계획은 점선 테두리로. 계획을 누르면 고치기.
+ */
+function WeekGrid({ days, today, now, onEdit }: { days: number[]; today: number; now: number; onEdit: (t: Todo) => void }) {
+  const intervals = useStore((s) => s.intervals);
+  const todos = useStore((s) => s.todos);
+  const activities = useStore((s) => s.activities);
+  const periods = useStore((s) => s.periods);
+  const color = (id?: string | null) => activities.find((a) => a.id === id)?.color ?? '#CFC6F3';
+  const scroller = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // 처음엔 아침 7시쯤부터 보이게
+    if (scroller.current) scroller.current.scrollTop = 7 * GRID_HOUR;
+  }, []);
+  const top = (ms: number, d: number) => ((ms - d) / HOUR) * GRID_HOUR;
+  return (
+    <div className="card wg">
+      <div className="wg-head">
+        <span />
+        {days.map((d) => (
+          <span key={d} data-today={d === today} data-period={periodsOn(periods, d).length > 0}>
+            {'일월화수목금토'[new Date(d).getDay()]}
+            <b>{new Date(d).getDate()}</b>
+          </span>
+        ))}
+      </div>
+      <div className="wg-body" ref={scroller}>
+        <div className="wg-hours">
+          {Array.from({ length: 24 }, (_, h) => (
+            <span key={h} style={{ top: h * GRID_HOUR }}>
+              {h}
+            </span>
+          ))}
+        </div>
+        {days.map((d) => {
+          const end = addDays(d, 1);
+          const ivs = intervals.filter((iv) => iv.start < end && (iv.end ?? now) > d);
+          const loose = todos.filter((t) => t.due === d && t.type === 'range' && t.start !== undefined && !t.activityId);
+          return (
+            <div key={d} className="wg-col" data-today={d === today} style={{ height: 24 * GRID_HOUR }}>
+              {ivs.map((iv) => {
+                const s = Math.max(iv.start, d);
+                const e = Math.min(iv.end ?? now, end);
+                return (
+                  <i
+                    key={iv.id}
+                    className={iv.kind === 'plan' ? 'wg-plan' : 'wg-exec'}
+                    style={{ top: top(s, d), height: Math.max(2, top(e, d) - top(s, d)), background: iv.kind === 'plan' ? soft(color(iv.activityId), 0.55) : color(iv.activityId), borderColor: color(iv.activityId) }}
+                  />
+                );
+              })}
+              {loose.map((t) => (
+                <button
+                  key={t.id}
+                  className="wg-todo"
+                  aria-label={`${t.text} 고치기`}
+                  style={{ top: top(t.start!, d), height: Math.max(14, top(t.end ?? t.start! + HOUR, d) - top(t.start!, d)) }}
+                  onClick={() => onEdit(t)}
+                >
+                  {t.text}
+                </button>
+              ))}
+              {todos
+                .filter((t) => t.due === d && t.type === 'range' && t.start !== undefined && t.activityId)
+                .map((t) => (
+                  <button
+                    key={t.id}
+                    className="wg-hit"
+                    aria-label={`${t.text} 고치기`}
+                    style={{ top: top(t.start!, d), height: Math.max(14, top(t.end ?? t.start! + HOUR, d) - top(t.start!, d)) }}
+                    onClick={() => onEdit(t)}
+                  >
+                    {t.text}
+                  </button>
+                ))}
+              {d === today && <div className="wg-now" style={{ top: top(now, d) }} />}
+            </div>
+          );
+        })}
+      </div>
+      <div className="wg-legend">
+        <span>
+          <i className="wg-plan" style={{ background: '#E5DFFB', borderColor: '#C9B8FF' }} />
+          계획
+        </span>
+        <span>
+          <i className="wg-exec" style={{ background: '#C9B8FF' }} />한 일
+        </span>
+        <span>
+          <i className="wg-dash" />
+          활동 없는 계획
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -688,6 +1007,7 @@ export function Todos({ now: clock }: { now: number }) {
         <b>한 주 짜기</b>
         <span>할 일을 길게 적으면 빈 시간에 나눠 줄게</span>
       </button>
+      <PeriodBar today={today} />
       {view === 'list' ? <ListView today={today} clock={clock} /> : <CalendarView today={today} clock={clock} />}
       {adding && <AddSheet today={today} clock={clock} onClose={() => setAdding(false)} />}
       {planning && <WeekPlanSheet onClose={() => setPlanning(false)} />}

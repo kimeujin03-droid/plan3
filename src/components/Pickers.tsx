@@ -89,16 +89,31 @@ export function CategoryChips({ value, onChange }: { value: string; onChange: (i
   const { activities, tops, childrenOf } = useGroups();
   const current = activities.find((a) => a.id === value);
   const rootId = current?.parentId ?? value;
-  const kids = childrenOf(rootId);
+  const [folded, setFolded] = useState(false);
+  const kids = folded ? [] : childrenOf(rootId);
   const sleep = activities.find((a) => a.id === SLEEP_ID);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div className="chips" role="group" aria-label="대주제">
         {[...tops, ...(sleep ? [sleep] : [])].map((a) => (
-          <button key={a.id} className="chip" style={{ background: a.color }} aria-pressed={rootId === a.id} onClick={() => onChange(a.id)}>
+          <button
+            key={a.id}
+            className="chip"
+            style={{ background: a.color }}
+            aria-pressed={rootId === a.id}
+            aria-expanded={childrenOf(a.id).length > 0 ? rootId === a.id && !folded : undefined}
+            onClick={() => {
+              // 이미 고른 대주제를 다시 누르면 하위 줄을 접었다 폈다 한다.
+              if (rootId === a.id && childrenOf(a.id).length > 0) setFolded(!folded);
+              else {
+                setFolded(false);
+                onChange(a.id);
+              }
+            }}
+          >
             {a.name}
-            {childrenOf(a.id).length > 0 && <Caret open={rootId === a.id} />}
+            {childrenOf(a.id).length > 0 && <Caret open={rootId === a.id && !folded} />}
           </button>
         ))}
       </div>
