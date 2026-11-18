@@ -114,6 +114,21 @@ export interface Series {
   /** 사용자가 지운 날(그날 0시): 다시 만들지 않는다 */
   skip: number[];
   createdAt: number;
+  /** 이 기간에만 반복한다(그날 0시, 양 끝 포함). 학기 시간표처럼 */
+  from?: number;
+  until?: number;
+  /** 바깥 캘린더에서 들어온 반복의 표지(UID). 같은 것을 두 번 넣지 않는다 */
+  ext?: string;
+}
+
+/** 이 일은 이 시간대에 집중이 잘 된다(한 주 짜기가 먼저 이 시간대를 쓴다) */
+export interface Focus {
+  id: string;
+  /** 할 일·활동 이름에 들어 있으면 해당(예: "공부", "미적분") */
+  word: string;
+  /** 시(0~26). 26은 새벽 2시 */
+  from: number;
+  to: number;
 }
 
 /** 모아 꾸미기: 앱과 위젯이 같이 쓴다 */
@@ -173,6 +188,7 @@ export interface Data {
   todos: Todo[];
   cellNotes: CellNote[];
   series: Series[];
+  focus: Focus[];
   memories: Memory[];
   look: Look;
   timer: TimerState | null;

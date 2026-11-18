@@ -84,6 +84,26 @@ describe('캘린더 파일 읽기', () => {
     expect(many.every((e) => (e.start - jst(11, 2, 10)) % (24 * 3600_000) === 0)).toBe(true);
   });
 
+  // 요일·0시가 기기 시간대 기준이라 한국·일본 시간대에서만 확인한다.
+  it.runIf(new Date(jst(11, 19, 10)).getHours() === 10)('매주 반복은 기간 있는 고정 일정으로 돌려준다', () => {
+    const r = parseIcs(ICS, from, to, true);
+    expect(r.weekly).toEqual([
+      {
+        ext: 'calc@google.com',
+        text: '기초미적분학',
+        days: [1, 4],
+        startMin: 600,
+        endMin: 690,
+        from: jst(9, 3, 0),
+        until: jst(12, 31, 0),
+        skip: [jst(11, 19, 0), jst(11, 23, 0)],
+        place: '공학관 301',
+      },
+    ]);
+    // 옮긴 회차(보강)는 따로 한 번짜리로 남는다
+    expect(r.events.map((e) => e.text)).toContain('기초미적분학 (보강)');
+  });
+
   it('구글 내보내기 zip에서도 꺼낸다', async () => {
     const zip = zipSync({ 'me@gmail.com.ics': strToU8(ICS), 'readme.txt': strToU8('x') });
     const file = { arrayBuffer: async () => zip.buffer.slice(zip.byteOffset, zip.byteOffset + zip.byteLength) } as unknown as File;

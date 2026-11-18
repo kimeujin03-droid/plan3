@@ -63,8 +63,15 @@ import { recordPlanEdit } from './lib/plans';
 import { CELL, dayStart, fmtDue, fmtDur, fmtHM } from './lib/time';
 import { logicalToday } from './lib/day';
 import { describeSeries, materializeSeries } from './lib/series';
-import type { Activity, Data, EraseMode, Look, Memory, PaintMode, Series, TimerState, Todo } from './lib/types';
+import type { Activity, Data, EraseMode, Focus, Look, Memory, PaintMode, Series, TimerState, Todo } from './lib/types';
 import { LIFE_ACTIVITIES, LIFE_ID } from './lib/palette';
+
+/** 한 번에 넣을 계획 하나 */
+export interface PlanItem {
+  text: string;
+  due: number | null;
+  extra?: Pick<Todo, 'type' | 'start' | 'end' | 'activityId' | 'place' | 'ext'>;
+}
 
 export interface Reply {
   text: string;
@@ -93,7 +100,10 @@ interface Store extends Data {
   cheerAt: number;
   addTodo: (text: string, due: number | null, extra?: Pick<Todo, 'type' | 'start' | 'end' | 'minutes' | 'activityId' | 'dueAt' | 'place'>) => void;
   /** 여러 계획을 한 번에 넣는다(한 주 짜기, 캘린더 불러오기). 한 번에 되돌릴 수 있다. */
-  addPlans: (items: { text: string; due: number | null; extra?: Pick<Todo, 'type' | 'start' | 'end' | 'activityId' | 'place' | 'ext'> }[], reply: string) => void;
+  addPlans: (items: PlanItem[], reply: string) => void;
+  /** 한 주 짜기 확정: 계획 + 고정 일정(기간 있는 반복) + 집중 시간을 한 번에. 한 번에 되돌린다. {n}은 넣은 개수 */
+  applyWeek: (input: { plans: PlanItem[]; series?: Omit<Series, 'id' | 'skip' | 'createdAt'>[]; focus?: Omit<Focus, 'id'>[] }, reply: string) => void;
+  removeFocus: (id: string) => void;
   /** 타이머(mode 'timer')나 뽀모도로를 시작한다. 활동도 같이 시작된다. */
   startTimer: (mode: TimerState['mode'], activityId: string, minutes: number) => void;
   /** 타이머 표시만 끈다. 돌고 있는 기록은 건드리지 않는다. */
@@ -171,6 +181,7 @@ export const emptyData = (): Data => ({
   todos: [],
   cellNotes: [],
   series: [],
+  focus: [],
   memories: [],
   look: { accessory: 'none', board: 'sign' },
   timer: null,
@@ -195,6 +206,7 @@ export function pickData(s: Data): Data {
     todos: s.todos,
     cellNotes: s.cellNotes,
     series: s.series,
+    focus: s.focus,
     memories: s.memories,
     look: s.look,
     timer: s.timer,
@@ -495,14 +507,42 @@ export const useStore = create<Store>()(
         set({ todos: [...s.todos, todo], intervals });
       },
 
-      addPlans: (items, reply) => {
-        if (!items.length) return;
+      addPlans: (items, reply) => get().applyWeek({ plans: items }, reply),
+
+      removeFocus: (id) => set({ focus: get().focus.filter((f) => f.id !== id) }),
+
+      applyWeek: ({ plans: items, series: newSeries = [], focus: newFocus = [] }, reply) => {
         const now = Date.now();
         const s = get();
         const before = pickData(s);
         let intervals = s.intervals;
+        let todos = s.todos;
         const added: Todo[] = [];
-        const seen = new Set(s.todos.map((t) => t.ext).filter(Boolean));
+        // 고정 일정: 같은 표지(ext)나 같은 이름·요일·시각이 이미 있으면 새로 만들지 않는다. 비어 있는 기간만 채운다(이미 정한 기간은 그대로).
+        let series = s.series;
+        const made: Series[] = [];
+        for (const x of newSeries) {
+          const same = series.find((o) => (x.ext && o.ext === x.ext) || (o.text === x.text && o.startMin === x.startMin && o.days.join() === [...x.days].sort().join()));
+          if (same) {
+            series = series.map((o) => (o === same ? { ...o, from: o.from ?? x.from, until: o.until ?? x.until } : o));
+            continue;
+          }
+          const one: Series = { ...x, days: [...x.days].sort(), id: uid('series'), skip: [], createdAt: now };
+          series = [...series, one];
+          made.push(one);
+        }
+        if (made.length) {
+          const out = materializeSeries(made, todos, intervals, logicalToday(now, intervals), now, () => uid('todo'));
+          todos = out.todos;
+          intervals = out.intervals;
+        }
+        const focus = [...s.focus];
+        for (const f of newFocus) {
+          const i = focus.findIndex((o) => o.word === f.word);
+          if (i >= 0) focus[i] = { ...focus[i], from: f.from, to: f.to };
+          else focus.push({ ...f, id: uid('focus') });
+        }
+        const seen = new Set(todos.map((t) => t.ext).filter(Boolean));
         for (const it of items) {
           const t = it.text.trim().slice(0, 80);
           if (!t) continue;
@@ -515,11 +555,12 @@ export const useStore = create<Store>()(
           }
           added.push(todo);
         }
-        if (!added.length) {
+        const n = added.length + newSeries.length;
+        if (!n && !newFocus.length) {
           set({ lastReply: { text: '새로 넣을 게 없었어.', at: now } });
           return;
         }
-        set({ todos: [...s.todos, ...added], intervals, undoData: before, lastReply: { text: reply.replace('{n}', String(added.length)), at: now, undo: true } });
+        set({ todos: [...todos, ...added], intervals, series, focus, undoData: before, lastReply: { text: reply.replace('{n}', String(n)), at: now, undo: true } });
       },
 
       startTimer: (mode, activityId, minutes) => {
@@ -917,6 +958,7 @@ export const useStore = create<Store>()(
             memories: arr(p.memories).filter((m) => m && typeof m.id === 'string' && Number.isFinite(m.start) && Number.isFinite(m.end)).map((m) => ({ ...m, photos: Array.isArray(m.photos) ? m.photos : [] })),
             look: cur.look,
             series: arr(p.series).filter((x) => x && typeof x.id === 'string' && Array.isArray(x.days) && Number.isFinite(x.startMin)),
+            focus: arr(p.focus).filter((f) => f && typeof f.word === 'string' && Number.isFinite(f.from) && Number.isFinite(f.to)),
             ai: cur.ai,
             apiOverride: cur.apiOverride,
             undoData: pickData(cur),

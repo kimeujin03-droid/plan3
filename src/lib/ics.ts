@@ -6,6 +6,22 @@ import { DAY } from './time';
  * 지원: DAILY / WEEKLY(BYDAY) / MONTHLY / YEARLY, INTERVAL, COUNT, UNTIL, EXDATE, RECURRENCE-ID(바뀐 회차), 취소된 일정.
  */
 
+/** 매주 반복하는 일정(시간표). 고정 일정으로 넣는다. 시각·요일은 이 기기 시간 기준 */
+export interface IcsWeekly {
+  ext: string;
+  text: string;
+  days: number[];
+  startMin: number;
+  endMin: number;
+  /** 첫 회차 날(0시) */
+  from: number;
+  /** 마지막 날(0시). 끝이 없으면 undefined */
+  until?: number;
+  /** 빠진 날·옮긴 날(0시) */
+  skip: number[];
+  place?: string;
+}
+
 export interface IcsEvent {
   /** 같은 일정을 두 번 넣지 않게: UID@시작시각 */
   ext: string;
@@ -175,8 +191,16 @@ function expand(first: { ms: number; wall: Wall; tz: string }, rrule: string, fr
   return out;
 }
 
-/** .ics 글을 읽어 [from, to) 안의 시간 일정을 돌려준다. */
-export function parseIcs(text: string, from: number, to: number): { events: IcsEvent[]; allDay: number } {
+const local0 = (ms: number) => {
+  const d = new Date(ms);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+};
+
+/**
+ * .ics 글을 읽어 [from, to) 안의 시간 일정을 돌려준다.
+ * weekly=true면 '매주 반복'(간격 1, 횟수 제한 없음)은 펼치지 않고 weekly로 따로 돌려준다: 학기 시간표를 기간 있는 고정 일정으로 넣으려고.
+ */
+export function parseIcs(text: string, from: number, to: number, weekly = false): { events: IcsEvent[]; allDay: number; weekly: IcsWeekly[] } {
   const raws: Raw[] = [];
   let cur: Raw | null = null;
   for (const line of unfold(text)) {
@@ -217,6 +241,7 @@ export function parseIcs(text: string, from: number, to: number): { events: IcsE
   }
 
   const events: IcsEvent[] = [];
+  const weeklyOut: IcsWeekly[] = [];
   let allDay = 0;
   for (const r of raws) {
     if (!r.start || r.status === 'CANCELLED') continue;
@@ -235,6 +260,13 @@ export function parseIcs(text: string, from: number, to: number): { events: IcsE
         if (t) skip.add(t.ms);
       }
     }
+    if (weekly && r.rrule && !r.recurrenceId) {
+      const w = asWeekly(r, s, len, skip);
+      if (w) {
+        if (w.until === undefined || w.until >= local0(from)) weeklyOut.push(w);
+        continue;
+      }
+    }
     const starts = r.rrule && !r.recurrenceId ? expand(s, r.rrule, from, to) : [s.ms];
     for (const st of starts) {
       if (skip.has(st)) continue;
@@ -244,7 +276,36 @@ export function parseIcs(text: string, from: number, to: number): { events: IcsE
     }
   }
   events.sort((a, b) => a.start - b.start);
-  return { events, allDay };
+  return { events, allDay, weekly: weeklyOut };
+}
+
+/** 간단한 매주 반복이면 고정 일정 모양으로. 아니면 null(펼쳐서 넣는다). */
+function asWeekly(r: Raw, s: { ms: number; wall: Wall; tz: string }, len: number, skip: Set<number>): IcsWeekly | null {
+  const rule = Object.fromEntries((r.rrule ?? '').split(';').map((kv) => kv.split('=')).map(([k, v]) => [k.toUpperCase(), v ?? '']));
+  if (rule.FREQ !== 'WEEKLY' || (rule.INTERVAL && rule.INTERVAL !== '1') || rule.COUNT) return null;
+  const st = new Date(s.ms);
+  const end = new Date(s.ms + (len || 3600_000));
+  if (local0(end.getTime() - 1) !== local0(s.ms)) return null; // 날을 넘기는 일정은 펼쳐서
+  const shift = new Date(s.ms).getDay() - wallDow(s.wall); // 시간대가 달라 요일이 밀리는 경우
+  const days = rule.BYDAY
+    ? rule.BYDAY.split(',').map((d: string) => WEEKDAY[d.slice(-2)]).filter((d: number | undefined) => d !== undefined).map((d: number) => (d + shift + 7) % 7)
+    : [st.getDay()];
+  let until: number | undefined;
+  if (rule.UNTIL) {
+    const u = readWall(rule.UNTIL);
+    if (u) until = local0(wallToMs(u.dateOnly ? { ...u.wall, h: 23, mi: 59, s: 59 } : u.wall, u.utc ? 'UTC' : s.tz));
+  }
+  return {
+    ext: r.uid || `${r.summary}@${s.ms}`,
+    text: r.summary || '일정',
+    days: [...new Set(days)].sort(),
+    startMin: st.getHours() * 60 + st.getMinutes(),
+    endMin: end.getHours() * 60 + end.getMinutes() || 24 * 60,
+    from: local0(s.ms),
+    until,
+    skip: [...skip].map(local0).sort((a, b) => a - b),
+    place: r.location ? r.location.slice(0, 20) : undefined,
+  };
 }
 
 /** 고른 파일(.ics 또는 구글 내보내기 .zip)에서 .ics 글들을 꺼낸다. */

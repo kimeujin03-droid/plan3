@@ -1,4 +1,4 @@
-import type { Activity, Interval, Todo } from './types';
+import type { Activity, Focus, Interval, Todo } from './types';
 import { DAY, HOUR, MIN, addDays, dayStart } from './time';
 import { matchActivity } from './parser';
 
@@ -32,11 +32,38 @@ export interface WeekEvent {
   place?: string;
 }
 
+/** 매주 반복(시간표) */
+export interface WeekFixed {
+  text: string;
+  days: number[];
+  start: string;
+  end?: string;
+  from?: string;
+  until?: string;
+  place?: string;
+}
+
+/** 이 일은 이 시간대에 잘 된다 */
+export interface WeekPref {
+  what: string;
+  from: number;
+  to: number;
+}
+
+export interface WeekResult {
+  tasks: WeekTask[];
+  events: WeekEvent[];
+  fixed: WeekFixed[];
+  prefs: WeekPref[];
+}
+
 /** 이미 잡혀 있는 시간 */
 export interface Busy {
   start: number;
   end: number;
   text: string;
+  /** 이번에 새로 넣는 고정 일정에서 온 것 */
+  fresh?: boolean;
 }
 
 export interface DraftBlock {
@@ -77,9 +104,41 @@ export interface PackOptions {
   /** 일정 사이 쉬는 틈(분) */
   breather?: number;
   activities?: Activity[];
+  /** 집중 잘 되는 시간대: 맞는 일은 이 시간대에 먼저 넣는다 */
+  focus?: Pick<Focus, 'word' | 'from' | 'to'>[];
 }
 
 const STEP = 10 * MIN;
+
+/** 할 일에 맞는 집중 시간대(이름·활동에 낱말이 들어 있으면) */
+export function focusFor(t: { text: string; activity?: string }, focus: Pick<Focus, 'word' | 'from' | 'to'>[] = []) {
+  const hay = norm(`${t.text} ${t.activity ?? ''}`);
+  return focus.find((f) => f.word.trim() && hay.includes(norm(f.word)));
+}
+
+/** "HH:MM" → 분 */
+export function minOf(hm: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hm);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+
+/** 새 고정 일정을 [today, today+7) 안의 시간으로 펼친다. 기간(from~until, 없으면 periodEnd까지)을 지킨다. */
+export function fixedBusy(fixed: WeekFixed[], today: number, periodEnd?: number): Busy[] {
+  const out: Busy[] = [];
+  for (const f of fixed) {
+    const s = minOf(f.start);
+    if (s === null) continue;
+    const e = (f.end && minOf(f.end)) || s + 60;
+    const from = (f.from && dayOf(f.from)) || -Infinity;
+    const until = (f.until && dayOf(f.until)) || periodEnd || Infinity;
+    for (let i = 0; i < 7; i++) {
+      const d = addDays(today, i);
+      if (d < from || d > until || !f.days.includes(new Date(d).getDay())) continue;
+      out.push({ start: d + s * MIN, end: d + e * MIN, text: f.text, fresh: true });
+    }
+  }
+  return out.sort((a, b) => a.start - b.start);
+}
 const DEFAULT_CHUNK = 90;
 const MIN_PIECE = 30;
 
@@ -215,7 +274,17 @@ export function pack(tasks: WeekTask[], events: WeekEvent[], busy: Busy[], opt: 
   };
 
   const place = (t: WeekTask, from: number, to: number, len: number) => {
-    const slot = findSlot(from, to, len, Math.min(len, MIN_PIECE * MIN));
+    // 집중 잘 되는 시간대가 있으면 그 안에서 먼저 통째로 찾는다.
+    const pref = focusFor(t, opt.focus);
+    let slot: { start: number; end: number } | null = null;
+    if (pref) {
+      for (let d = dayStart(from); d < to && !slot; d += DAY) {
+        const ps = Math.max(from, d + pref.from * HOUR);
+        const pe = Math.min(to, d + pref.to * HOUR);
+        if (pe > ps) slot = findSlot(ps, pe, len, len);
+      }
+    }
+    slot = slot ?? findSlot(from, to, len, Math.min(len, MIN_PIECE * MIN));
     if (!slot) return 0;
     blocks.push({ key: key(), text: t.text, start: slot.start, end: slot.end, activityId: actId(t), place: t.place });
     taken.push({ start: slot.start, end: slot.end, text: t.text });
@@ -313,17 +382,19 @@ export async function aiWeek(
   today: number,
   busy: Busy[],
   activities: Activity[],
-): Promise<{ tasks: WeekTask[]; events: WeekEvent[] } | null> {
+  image?: { mime: string; data: string },
+): Promise<WeekResult | null> {
   if (!apiUrl) return null;
   const hm = (ms: number) => `${pad(new Date(ms).getHours())}:${pad(new Date(ms).getMinutes())}`;
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => ctrl.abort(), image ? 60_000 : TIMEOUT_MS);
   try {
     const res = await fetch(`${apiUrl}/v1/week`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        text: text.slice(0, 1500),
+        text: text.slice(0, 3000),
+        ...(image ? { image } : {}),
         days: weekDays(today),
         events: busy.slice(0, 80).map((b) => ({ date: ymd(dayStart(b.start)), start: hm(b.start), end: dayStart(b.end) === dayStart(b.start) ? hm(b.end) : '', text: b.text.slice(0, 30) })),
         activities: activities.map((a) => a.name).slice(0, 30),
@@ -331,10 +402,12 @@ export async function aiWeek(
       signal: ctrl.signal,
     });
     if (!res.ok) return null;
-    const data = (await res.json()) as { tasks?: unknown; events?: unknown };
+    const data = (await res.json()) as { tasks?: unknown; events?: unknown; fixed?: unknown; prefs?: unknown };
     const tasks = (Array.isArray(data.tasks) ? data.tasks : []).filter((t): t is WeekTask => !!t && typeof (t as WeekTask).text === 'string');
     const events = (Array.isArray(data.events) ? data.events : []).filter((e): e is WeekEvent => !!e && typeof (e as WeekEvent).text === 'string');
-    return { tasks: tasks.map((t) => ({ ...t, minutes: Number(t.minutes) || 0, chunk: Number(t.chunk) || 0 })), events };
+    const fixed = (Array.isArray(data.fixed) ? data.fixed : []).filter((f): f is WeekFixed => !!f && typeof (f as WeekFixed).text === 'string' && Array.isArray((f as WeekFixed).days));
+    const prefs = (Array.isArray(data.prefs) ? data.prefs : []).filter((p): p is WeekPref => !!p && typeof (p as WeekPref).what === 'string');
+    return { tasks: tasks.map((t) => ({ ...t, minutes: Number(t.minutes) || 0, chunk: Number(t.chunk) || 0 })), events, fixed, prefs };
   } catch {
     return null;
   } finally {

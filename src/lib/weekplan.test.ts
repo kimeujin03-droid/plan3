@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { HOUR, MIN, addDays } from './time';
-import { busyOf, pack, looksLikeWeekRequest, weekDays, ymd, type Busy } from './weekplan';
+import { busyOf, fixedBusy, focusFor, pack, looksLikeWeekRequest, weekDays, ymd, type Busy } from './weekplan';
 import type { Todo } from './types';
 
 const today = new Date(2026, 10, 18).getTime(); // 수
@@ -85,6 +85,35 @@ describe('한 주 짜기 배치', () => {
     const out = pack([{ text: '공부', minutes: 120, chunk: 0 }], [], full, { today, now });
     expect(out.blocks).toEqual([]);
     expect(out.left).toEqual([{ text: '공부', minutes: 120 }]);
+  });
+});
+
+describe('집중 시간과 고정 일정', () => {
+  it('집중 잘 되는 시간대에 먼저 넣고, 자리가 없으면 다른 시간에', () => {
+    const focus = [{ word: '공부', from: 20, to: 23 }];
+    const out = pack([{ text: '미적분 공부', minutes: 180, chunk: 90 }], [], busy, { today, now, focus });
+    const b = out.blocks;
+    expect(b).toHaveLength(2);
+    // 수(오늘) 20:00~21:30, 다음은 목 20:10~21:40 (초잉 과외 18~20시 뒤 쉬는 틈)
+    expect(b.map((x) => x.start)).toEqual([d(0, 20), d(1, 20, 10)]);
+    expect(focusFor({ text: '빨래' }, focus)).toBeUndefined();
+    expect(focusFor({ text: '복습', activity: '공부' }, focus)?.from).toBe(20);
+  });
+
+  it('새 시간표를 이번 주 시간으로 펼치고, 기간을 지킨다', () => {
+    const fb = fixedBusy(
+      [
+        { text: '기초미적분학', days: [1, 4], start: '10:00', end: '11:30' },
+        { text: '글쓰기', days: [5], start: '13:00', until: ymd(addDays(today, 1)) },
+        { text: '영어', days: [3], start: '9:00', end: '10:00', from: ymd(addDays(today, 3)) },
+      ],
+      today,
+    );
+    expect(fb.map((b) => [b.text, b.start, b.end])).toEqual([
+      ['기초미적분학', d(1, 10), d(1, 11, 30)],
+      ['기초미적분학', d(5, 10), d(5, 11, 30)],
+    ]);
+    expect(fb.every((b) => b.fresh)).toBe(true);
   });
 });
 

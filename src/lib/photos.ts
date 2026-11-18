@@ -4,7 +4,7 @@ const MAX_SIDE = 1280;
 const WEB_SIDE = 480;
 
 /** 고른 사진을 줄여서 JPEG로 만든다(긴 변 1280px). */
-async function shrink(file: File, side: number): Promise<string> {
+export async function shrink(file: File, side: number): Promise<string> {
   const bitmap = await createImageBitmap(file);
   const k = Math.min(1, side / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement('canvas');

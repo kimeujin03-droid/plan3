@@ -126,10 +126,47 @@ describe('한 주 짜기 /v1/week', () => {
         { text: '카카오 명의변경', minutes: 0, chunk: 0, on: '2026-11-19' },
         { text: '학술제 자료조사', minutes: 0, chunk: 0 },
       ],
-      events: [{ text: '치과', date: '2026-11-20', start: '15:00' }],
+      events: [{ text: '치과', date: '2026-11-20', start: '15:00' }, { text: '먼 약속', date: '2027-01-01', start: '10:00' }],
+      fixed: [],
+      prefs: [],
     });
     const sent = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(JSON.parse(sent.contents[0].parts[0].text).events[0].text).toBe('기초미적분학');
+  });
+
+  it('사진을 함께 보내고, 시간표·집중 시간을 걸러 받는다', async () => {
+    const fetchMock = vi.fn(async () =>
+      geminiSays({
+        tasks: [],
+        events: [],
+        fixed: [
+          { text: '기초미적분학', days: [4, 1, 1, 9], start: '10:00', end: '11:30', from: '', until: '2026-12-19', place: '공학관' },
+          { text: '요일 없음', days: [], start: '10:00' },
+          { text: '끝이 앞', days: [2], start: '13:00', end: '12:00', until: '2030-01-01' },
+        ],
+        prefs: [{ what: '공부', from: 9, to: 12 }, { what: '이상', from: 20, to: 10 }],
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const res = await worker.fetch(req({ text: '', days, image: { mime: 'image/jpeg', data: 'aGVsbG8=' } }), env);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      tasks: [],
+      events: [],
+      fixed: [
+        { text: '기초미적분학', days: [1, 4], start: '10:00', end: '11:30', until: '2026-12-19', place: '공학관' },
+        { text: '끝이 앞', days: [2], start: '13:00' },
+      ],
+      prefs: [{ what: '공부', from: 9, to: 12 }],
+    });
+    const parts = JSON.parse(fetchMock.mock.calls[0][1].body).contents[0].parts;
+    expect(parts[1]).toEqual({ inlineData: { mimeType: 'image/jpeg', data: 'aGVsbG8=' } });
+  });
+
+  it('이상한 사진 형식은 버리고, 글도 사진도 없으면 400', async () => {
+    vi.stubGlobal('fetch', vi.fn());
+    const res = await worker.fetch(req({ text: '', days, image: { mime: 'image/gif', data: 'aGVsbG8=' } }), env);
+    expect(res.status).toBe(400);
   });
 
   it('날짜 목록이 없으면 400', async () => {

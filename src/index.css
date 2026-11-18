@@ -2259,3 +2259,60 @@ a.link {
   background: #fff;
   font-size: 13px;
 }
+.wk-in {
+  background: var(--bg);
+  min-height: 40px;
+}
+.wk-chip {
+  min-height: 32px;
+  padding: 0 10px;
+  background: var(--bg);
+  font-size: 13px;
+}
+.wk-chip.on {
+  background: var(--ink);
+  color: #fff;
+}
+.wk-photo {
+  position: relative;
+  align-self: flex-start;
+}
+.wk-photo img {
+  display: block;
+  max-height: 140px;
+  max-width: 100%;
+  border-radius: 12px;
+}
+.wk-photo button {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  min-height: 28px;
+  padding: 0 9px;
+  background: rgba(255, 255, 255, 0.9);
+}
+.wk-focus {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 14px;
+  background: #ece8fb;
+  font-size: 13px;
+}
+.wk-focus button {
+  min-width: 24px;
+  min-height: 24px;
+  border-radius: 12px;
+  background: #fff;
+  font-size: 11px;
+}
+.wk-box {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+.wk-box .sub {
+  font-size: 12px;
+}

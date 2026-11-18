@@ -13,7 +13,9 @@ export function describeSeries(s: Series): string {
   const hm = (m: number) => `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
   const days =
     s.days.length === 7 ? '매일' : s.days.join() === '1,2,3,4,5' ? '평일' : s.days.join() === '0,6' ? '주말' : `매주 ${[...s.days].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)).map((d) => DAYS[d]).join('·')}`;
-  return `${days} ${hm(s.startMin)}${s.endMin !== null ? `–${hm(s.endMin)}` : ''}`;
+  const md = (d: number) => `${new Date(d).getMonth() + 1}/${new Date(d).getDate()}`;
+  const span = s.until !== undefined ? ` · ${s.from !== undefined && s.from > Date.now() ? md(s.from) : ''}~${md(s.until)}` : '';
+  return `${days} ${hm(s.startMin)}${s.endMin !== null ? `–${hm(s.endMin)}` : ''}${span}`;
 }
 
 /**
@@ -37,6 +39,8 @@ export function materializeSeries(
       if (!s.days.includes(new Date(day).getDay())) continue;
       if (day < s.createdAt - 24 * 60 * MIN && i > 0) continue;
       if (s.skip.includes(day)) continue;
+      if (s.from !== undefined && day < s.from) continue;
+      if (s.until !== undefined && day > s.until) continue;
       if (outTodos.some((t) => t.seriesId === s.id && t.due === day)) continue;
       const start = day + s.startMin * MIN;
       const end = s.endMin !== null ? day + s.endMin * MIN : undefined;

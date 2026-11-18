@@ -107,3 +107,35 @@ describe('MOA-067 일상 활동', () => {
     expect(acts.filter((a) => a.parentId === 'life').map((a) => a.name)).toEqual(['데이트', '친구', '휴식', '카페', '기타']);
   });
 });
+
+describe('한 주 짜기 확정(applyWeek)', () => {
+  it('고정 일정·계획·집중 시간을 한 번에 넣고, 같은 고정 일정은 다시 만들지 않으며 정한 기간은 그대로 둔다', async () => {
+    const { useStore } = await import('../store');
+    const { emptyData } = await import('../store');
+    useStore.setState({ ...emptyData(), undoData: null, lastReply: null });
+    const now = Date.now();
+    const day0 = new Date(new Date(now).getFullYear(), new Date(now).getMonth(), new Date(now).getDate()).getTime();
+    const until1 = day0 + 30 * 24 * 3600_000;
+    const st = useStore.getState();
+    st.applyWeek(
+      {
+        plans: [{ text: '자료조사', due: day0 + 86400_000, extra: { type: 'range', start: day0 + 86400_000 + 20 * 3600_000, end: day0 + 86400_000 + 21 * 3600_000 } }],
+        series: [{ text: '미적분', activityId: null, days: [4, 1], startMin: 600, endMin: 690, until: until1 }],
+        focus: [{ word: '공부', from: 20, to: 23 }],
+      },
+      '{n}개 넣었어',
+    );
+    let s = useStore.getState();
+    expect(s.series).toHaveLength(1);
+    expect(s.series[0].days).toEqual([1, 4]);
+    expect(s.focus.map((f) => f.word)).toEqual(['공부']);
+    expect(s.todos.some((t) => t.text === '자료조사')).toBe(true);
+    expect(s.lastReply?.text).toBe('2개 넣었어');
+    s.applyWeek({ plans: [], series: [{ text: '미적분', activityId: null, days: [1, 4], startMin: 600, endMin: 690, until: until1 + 90 * 86400_000 }] }, '{n}개');
+    s = useStore.getState();
+    expect(s.series).toHaveLength(1);
+    expect(s.series[0].until).toBe(until1);
+    s.undo();
+    expect(useStore.getState().series).toHaveLength(1);
+  });
+});

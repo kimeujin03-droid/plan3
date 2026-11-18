@@ -62,3 +62,8 @@ jobs:
          "activities":["공부","과제","알바"]}
         JSON
         echo "week => $(curl -sS -m 40 -w ' [%{http_code} %{time_total}s]' -X POST $URL/v1/week -H 'content-type: application/json' --data-binary @/tmp/week.json)"
+        cat > /tmp/fixed.json <<'JSON'
+        {"text":"월 10:00-11:30 기초미적분학 (공학관 301)\n목 10:00-11:30 기초미적분학 (공학관 301)\n화 13:00-15:00 글쓰기\n매주 토요일 2시~6시 카페 알바, 12월 19일까지\n공부는 밤 9시 이후에 집중 잘 돼",
+         "days":["2026-11-18 수","2026-11-19 목","2026-11-20 금","2026-11-21 토","2026-11-22 일","2026-11-23 월","2026-11-24 화"],"events":[],"activities":["공부","알바"]}
+        JSON
+        echo "fixed => $(curl -sS -m 40 -w ' [%{http_code} %{time_total}s]' -X POST $URL/v1/week -H 'content-type: application/json' --data-binary @/tmp/fixed.json)"
