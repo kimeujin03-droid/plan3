@@ -141,6 +141,7 @@ describe('한 주 짜기 /v1/week', () => {
         events: [],
         fixed: [
           { text: '기초미적분학', days: [4, 1, 1, 9], start: '10:00', end: '11:30', from: '', until: '2026-12-19', place: '공학관' },
+          { text: '기초미적분학', days: [1, 4], start: '10:00', end: '11:30' },
           { text: '요일 없음', days: [], start: '10:00' },
           { text: '끝이 앞', days: [2], start: '13:00', end: '12:00', until: '2030-01-01' },
         ],

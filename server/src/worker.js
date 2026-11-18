@@ -279,7 +279,12 @@ fixed: 매주 같은 요일·시각에 반복되는 일정(수업 시간표, 매
 - text: 과목·일정 이름(짧게). days: 요일 숫자 배열(0=일, 1=월 … 6=토). start/end: "HH:MM"(24시간, end 모르면 "").
 - from/until: 반복 기간을 말했으면 "YYYY-MM-DD"(예: "12월 20일까지", "다음 달부터"). 말하지 않았으면 "". 학기 끝 날짜를 지어내지 마라.
 - place: 강의실·장소가 보이면 짧게, 아니면 "".
-- 시간표 표에서 같은 과목이 여러 칸에 걸치면 이어진 하나의 시각으로 합친다. 요일이 다르면 days에 모은다(시각이 같을 때만. 다르면 따로).
+- 글과 사진에 나온 반복 일정을 하나도 빠뜨리지 말고 모두 넣는다. 줄마다 따로 적힌 일정도 각각 넣는다.
+- 같은 이름·같은 시각이 요일만 다르게 여러 줄이면 하나로 합쳐 days에 모은다. 같은 것을 두 번 넣지 마라.
+- 시간표 표에서 같은 과목이 여러 칸에 걸치면 이어진 하나의 시각으로 합친다.
+- "○○까지", "○○부터"는 그 말이 붙은 일정(같은 문장·같은 줄)에만 쓴다. 다른 일정에 옮기지 마라.
+- 괄호 안의 강의실·장소는 place로 뺀다.
+- 오전/오후를 말하지 않은 1~7시는 낮(13~19시)으로 본다. 8~11시는 오전, 12시는 정오.
 events: 한 번만 있는 약속(날짜와 시각이 정해진 것). text, date("YYYY-MM-DD"), start, end(모르면 ""), place. 이미 events에 있는 것은 빼라.
 tasks: 시간을 따로 잡아서 해야 하는 일.
 - text: 10자 안팎의 짧은 이름(예: "미적분 복습", "학술제 자료조사", "카카오 명의변경").
@@ -300,8 +305,11 @@ prefs: 사용자가 "○○은 △시에 집중이 잘 된다", "공부는 아�
 예시 1 (days 첫 날이 "2026-09-07 일"이고 events에 "기초미적분학"이 여러 번 있을 때):
 "내일은 화정이 과외 자료 마무리랑 카카오 명의변경 하고 폴더 정리할거야. 미적분 수업마다 복습 2시간은 필요해. 학술제 자료조사 3-4시간 필요할 듯. 공부는 오전에 집중 잘 돼"
 → {"tasks":[{"text":"화정이 과외 자료 마무리","minutes":0,"chunk":0,"on":"2026-09-08","due":"","after":"","activity":"","place":""},{"text":"카카오 명의변경","minutes":0,"chunk":0,"on":"2026-09-08","due":"","after":"","activity":"","place":""},{"text":"폴더 정리","minutes":0,"chunk":0,"on":"2026-09-08","due":"","after":"","activity":"","place":""},{"text":"미적분 복습","minutes":0,"chunk":120,"on":"","due":"","after":"미적분","activity":"","place":""},{"text":"학술제 자료조사","minutes":240,"chunk":0,"on":"","due":"","after":"","activity":"","place":""}],"events":[],"fixed":[],"prefs":[{"what":"공부","from":9,"to":12}]}
-예시 2: "매주 월목 10시~11시반 기초미적분학 공학관 301, 화요일 1시부터 3시 글쓰기. 12월 19일까지야"
-→ {"tasks":[],"events":[],"fixed":[{"text":"기초미적분학","days":[1,4],"start":"10:00","end":"11:30","from":"","until":"2026-12-19","place":"공학관 301"},{"text":"글쓰기","days":[2],"start":"13:00","end":"15:00","from":"","until":"2026-12-19","place":""}],"prefs":[]}`;
+예시 2: "매주 월목 10시~11시반 기초미적분학 공학관 301, 화요일 1시부터 3시 글쓰기. 둘 다 12월 19일까지야"
+→ {"tasks":[],"events":[],"fixed":[{"text":"기초미적분학","days":[1,4],"start":"10:00","end":"11:30","from":"","until":"2026-12-19","place":"공학관 301"},{"text":"글쓰기","days":[2],"start":"13:00","end":"15:00","from":"","until":"2026-12-19","place":""}],"prefs":[]}
+예시 3 (다른 캘린더에서 복사한 줄들):
+"월 09:00-10:30 통계학 (A동 204)\n수 09:00-10:30 통계학 (A동 204)\n금 15:00-17:00 동아리\n매주 일요일 3시~5시 과외, 1월 말까지\n글쓰기는 새벽에 잘 써져"
+→ {"tasks":[],"events":[],"fixed":[{"text":"통계학","days":[1,3],"start":"09:00","end":"10:30","from":"","until":"","place":"A동 204"},{"text":"동아리","days":[5],"start":"15:00","end":"17:00","from":"","until":"","place":""},{"text":"과외","days":[0],"start":"15:00","end":"17:00","from":"","until":"2027-01-31","place":""}],"prefs":[{"what":"글쓰기","from":24,"to":26}]}`;
 
 const WEEK_SCHEMA = {
   type: 'OBJECT',
@@ -455,6 +463,14 @@ export function sanitizeWeek(parsed, days) {
       return out;
     })
     .filter(Boolean);
+  // 같은 고정 일정이 두 번 나오면 하나로(기간·장소가 있는 쪽을 살린다)
+  const fixedOne = [];
+  for (const f of fixed) {
+    const same = fixedOne.find((o) => o.text === f.text && o.start === f.start && o.end === f.end && o.days.join() === f.days.join());
+    if (same) Object.assign(same, { ...f, ...same, until: same.until ?? f.until, from: same.from ?? f.from, place: same.place ?? f.place });
+    else fixedOne.push(f);
+  }
+  for (const f of fixedOne) for (const k of ['until', 'from', 'place']) if (f[k] === undefined) delete f[k];
   const prefs = (Array.isArray(parsed?.prefs) ? parsed.prefs : [])
     .slice(0, 8)
     .map((p) => {
@@ -465,7 +481,7 @@ export function sanitizeWeek(parsed, days) {
       return { what, from, to };
     })
     .filter(Boolean);
-  return { tasks, events, fixed, prefs };
+  return { tasks, events, fixed: fixedOne, prefs };
 }
 
 async function weekRoute(request, env, cors) {
