@@ -276,20 +276,23 @@ export function Grid({ day, kind, erasing, activityId, now, onMemo, select = fal
               {c.label2 && <span className="l2">{c.label2}</span>}
             </div>
           ))}
-          {/* 메모: 진한 테두리, 반투명 바탕, 글은 칸 가운데를 따라 한 줄로 이어진다 */}
+          {/*
+            한마디: 계획·한 일 띠처럼 칸에 딱 붙여 그린다. 진한 테두리, 반투명 바탕.
+            시작과 끝만 둥글고, 다음 시간 줄로 넘어가는 쪽은 열어 둬서 이어지는 띠로 보인다.
+          */}
           {boxes.map((b) => (
             <div
               key={b.key}
               className="memo-box"
               style={{
-                top: `calc(var(--row) * ${b.row} + 4px)`,
-                left: `calc(${(b.col / 6) * 100}% + 2px)`,
-                width: `calc(${(b.span / 6) * 100}% - 4px)`,
+                top: `calc(var(--row) * ${b.row} + 2px)`,
+                left: `${(b.col / 6) * 100}%`,
+                width: `${(b.span / 6) * 100}%`,
                 background: `${b.color}66`,
                 borderColor: darker(b.color),
-                borderRadius: `${b.first ? 12 : 4}px ${b.last ? 12 : 4}px ${b.last ? 12 : 4}px ${b.first ? 12 : 4}px`,
-                borderLeftStyle: b.first ? 'solid' : 'dashed',
-                borderRightStyle: b.last ? 'solid' : 'dashed',
+                borderLeftWidth: b.first ? 2 : 0,
+                borderRightWidth: b.last ? 2 : 0,
+                borderRadius: `${b.first ? 14 : 0}px ${b.last ? 14 : 0}px ${b.last ? 14 : 0}px ${b.first ? 14 : 0}px`,
               }}
             >
               <span>{b.text}</span>
