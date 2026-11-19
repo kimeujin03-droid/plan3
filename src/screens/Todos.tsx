@@ -144,6 +144,7 @@ function Steps({ todo, open }: { todo: Todo; open: boolean }) {
   const toggle = useStore((s) => s.toggleStep);
   const remove = useStore((s) => s.removeStep);
   const add = useStore((s) => s.addStep);
+  const rename = useStore((s) => s.renameStep);
   const [text, setText] = useState('');
   const steps = todo.steps ?? [];
   const done = steps.filter((s) => s.done).length;
@@ -160,10 +161,24 @@ function Steps({ todo, open }: { todo: Todo; open: boolean }) {
               </svg>
             )}
           </button>
-          <span className="grow" style={{ textDecoration: s.done ? 'line-through' : undefined, color: s.done ? 'var(--sub)' : undefined }}>
-            {!open && <em>다음 · </em>}
-            {s.text}
-          </span>
+          {open ? (
+            // 펼쳤을 때는 단계 이름을 바로 고칠 수 있다
+            <input
+              key={s.text}
+              className="grow step-edit"
+              aria-label={`${i + 1}번째 단계 이름`}
+              defaultValue={s.text}
+              maxLength={40}
+              style={{ textDecoration: s.done ? 'line-through' : undefined, color: s.done ? 'var(--sub)' : undefined }}
+              onBlur={(e) => e.target.value.trim() && e.target.value !== s.text && rename(todo.id, i, e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+            />
+          ) : (
+            <span className="grow">
+              <em>다음 · </em>
+              {s.text}
+            </span>
+          )}
           {open ? (
             <button className="step-x" aria-label={`${s.text} 지우기`} onClick={() => remove(todo.id, i)}>
               ×

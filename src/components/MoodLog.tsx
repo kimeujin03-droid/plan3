@@ -72,14 +72,54 @@ export function MoodLog({ now }: { now: number }) {
             {fmtDayLong(day)}
           </div>
           {items.map((m) => (
-            <div key={m.id} className="row" style={{ gap: 10 }}>
-              <span className="tag">{fmtHM(m.at)}</span>
-              {m.value ? <Moa size={28} mood={MOOD_FACE[m.value]} decorative /> : null}
-              <span style={{ fontSize: 15 }}>{m.text}</span>
-            </div>
+            <MoodRow key={m.id} id={m.id} at={m.at} text={m.text} value={m.value} />
           ))}
         </div>
       ))}
     </>
+  );
+}
+
+/** 기분 한 줄: 누르면 글·얼굴 고치기, 지우기 */
+function MoodRow({ id, at, text, value }: { id: string; at: number; text: string; value?: number }) {
+  const update = useStore((s) => s.updateNote);
+  const remove = useStore((s) => s.removeNote);
+  const [open, setOpen] = useState(false);
+  const [t, setT] = useState(text);
+  if (!open)
+    return (
+      <button className="row mood-row" style={{ gap: 10 }} aria-label={`${fmtHM(at)} 기분 고치기`} onClick={() => setOpen(true)}>
+        <span className="tag">{fmtHM(at)}</span>
+        {value ? <Moa size={28} mood={MOOD_FACE[value]} decorative /> : null}
+        <span style={{ fontSize: 15, textAlign: 'left' }} className="grow">
+          {text}
+        </span>
+      </button>
+    );
+  return (
+    <div className="mood-edit">
+      <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+        {[1, 2, 3, 4, 5].map((v) => (
+          <button key={v} className="mood-face" aria-pressed={value === v} aria-label={MOOD_WORDS[v]} onClick={() => update(id, { value: v })}>
+            <Moa size={30} mood={MOOD_FACE[v]} decorative />
+          </button>
+        ))}
+      </div>
+      <input className="field" aria-label="기분 글" value={t} maxLength={200} onChange={(e) => setT(e.target.value)} />
+      <div className="row" style={{ gap: 8 }}>
+        <button className="pill" style={{ background: 'var(--bg)' }} onClick={() => remove(id)}>
+          지우기
+        </button>
+        <button
+          className="pill ink grow"
+          onClick={() => {
+            update(id, { text: t });
+            setOpen(false);
+          }}
+        >
+          고치기
+        </button>
+      </div>
+    </div>
   );
 }

@@ -92,6 +92,8 @@ export interface Memory {
   photos: string[];
   /** 이 기억이 이룬 계획 */
   todoId?: string;
+  /** 이 한마디가 붙은 기록(계획·한 일 칠). 기록 시각을 고치면 같이 옮겨진다 */
+  intervalId?: string;
   createdAt: number;
 }
 

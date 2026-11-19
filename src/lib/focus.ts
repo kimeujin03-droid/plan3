@@ -13,21 +13,32 @@ export interface FocusCell {
  * 한 번의 작업(start~end)을 10분 칸으로 나눠 칸마다 집중도를 준다.
  * 아무것도 안 누른 칸은 바로 앞 칸의 값을 그대로 잇는다.
  */
-export function focusCells(samples: Sample[], activityId: string, start: number, end: number): FocusCell[] {
+export function focusCells(samples: Sample[], activityId: string, start: number, end: number, step = CELL): FocusCell[] {
   const mine = samples
     .filter((m) => m.kind === 'focus' && m.activityId === activityId && m.at >= start && m.at <= end)
     .sort((a, b) => a.at - b.at);
   const out: FocusCell[] = [];
   let value: number | null = null;
   let k = 0;
-  for (let at = Math.floor(start / CELL) * CELL; at < end; at += CELL) {
+  for (let at = Math.floor(start / step) * step; at < end; at += step) {
     let picked = false;
-    while (k < mine.length && mine[k].at < at + CELL) {
+    while (k < mine.length && mine[k].at < at + step) {
       value = mine[k].value;
       picked = true;
       k++;
     }
     out.push({ at, value, picked });
+  }
+  return out;
+}
+
+/** 1분 칸들을 같은 값끼리 이어 붙인 조각들(그리기용) */
+export function focusRuns(cells: FocusCell[]): { at: number; minutes: number; value: number | null; picked: boolean }[] {
+  const out: { at: number; minutes: number; value: number | null; picked: boolean }[] = [];
+  for (const c of cells) {
+    const last = out[out.length - 1];
+    if (last && last.value === c.value && !c.picked) last.minutes++;
+    else out.push({ at: c.at, minutes: 1, value: c.value, picked: c.picked });
   }
   return out;
 }

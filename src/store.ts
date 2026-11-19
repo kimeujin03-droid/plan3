@@ -130,6 +130,11 @@ interface Store extends Data {
   updateSeries: (id: string, patch: Partial<Pick<Series, 'text' | 'days' | 'startMin' | 'endMin' | 'place' | 'until' | 'activityId'>>) => void;
   /** 기록 하나를 통째로 지운다. 되돌릴 수 있다. */
   removeInterval: (id: string) => void;
+  /**
+   * 칠한 일정 하나를 고친다: 활동, 시작·끝(분 단위), 그 일정의 한마디.
+   * end가 null이면 진행 중으로 둔다. memo가 ''이면 붙은 한마디(글만 있는 것)를 지운다. 되돌릴 수 있다.
+   */
+  editInterval: (id: string, patch: { activityId?: string; start?: number; end?: number | null; memo?: string }) => void;
   /** 칸 메모를 쓰거나(빈 글이면) 지운다. */
   setCellNote: (at: number, text: string) => void;
   /** 이어진 10분 칸 여러 개를 한 번에 칠한다. 주간 보기에서 한 시간씩 칠할 때 쓴다. */
@@ -161,6 +166,12 @@ interface Store extends Data {
   toggleStep: (id: string, index: number) => void;
   addStep: (id: string, text: string) => void;
   removeStep: (id: string, index: number) => void;
+  renameStep: (id: string, index: number, text: string) => void;
+  /** 기분 기록 고치기·지우기 */
+  updateNote: (id: string, patch: { text?: string; value?: number }) => void;
+  removeNote: (id: string) => void;
+  /** 집중 잘 되는 시간 고치기 */
+  updateFocus: (id: string, from: number, to: number) => void;
   /** 진행률을 +/− 한 칸(설정의 %p) 바꾼다. 바꾼 시각과 전후 값을 남긴다. */
   stepProgress: (id: string, dir: 1 | -1) => void;
   /** 이 할 일에 진행률을 쓸지 */
@@ -742,7 +753,42 @@ export const useStore = create<Store>()(
       removeInterval: (id) => {
         const before = pickData(get());
         if (!before.intervals.some((iv) => iv.id === id)) return;
-        set({ intervals: before.intervals.filter((iv) => iv.id !== id), undoData: before, lastReply: { text: '기록을 지웠어.', at: Date.now(), undo: true } });
+        set({
+          intervals: before.intervals.filter((iv) => iv.id !== id),
+          // 일정에 붙은 한마디는 남기되 연결만 푼다(글은 소중하니까)
+          memories: before.memories.map((m) => (m.intervalId === id ? { ...m, intervalId: undefined } : m)),
+          undoData: before,
+          lastReply: { text: '기록을 지웠어.', at: Date.now(), undo: true },
+        });
+      },
+
+      editInterval: (id, patch) => {
+        const now = Date.now();
+        const before = pickData(get());
+        const old = before.intervals.find((iv) => iv.id === id);
+        if (!old) return;
+        const start = patch.start ?? old.start;
+        let end = patch.end === undefined ? old.end : patch.end;
+        // 한 일은 지금보다 뒤에 끝날 수 없다
+        if (old.kind === 'exec' && end !== null && end > now) end = Math.max(start + 60_000, Math.floor(now / 60_000) * 60_000);
+        if (end !== null && end <= start) return;
+        if (end === null && start > now) return;
+        const next = { ...old, start, end, activityId: patch.activityId ?? old.activityId };
+        const intervals = before.intervals.map((iv) => (iv.id === id ? next : iv));
+        // 이 일정의 한마디: 연결된 것, 없으면 시각이 꼭 같은 것
+        const linked = before.memories.find((m) => m.intervalId === id) ?? before.memories.find((m) => !m.intervalId && m.start === old.start && m.end === (old.end ?? now));
+        let memories = before.memories;
+        const range = { start, end: end ?? Math.max(now, start + 60_000) };
+        if (linked) {
+          const text = patch.memo === undefined ? linked.text : patch.memo.trim().slice(0, 1000);
+          const bare = !text && !linked.photos.length && !linked.place && !linked.people && !linked.mood;
+          memories = bare
+            ? memories.filter((m) => m.id !== linked.id)
+            : memories.map((m) => (m.id === linked.id ? { ...m, ...range, text, activityId: next.activityId, intervalId: id } : m));
+        } else if (patch.memo?.trim()) {
+          memories = [...memories, { id: uid('mem'), ...range, activityId: next.activityId, text: patch.memo.trim().slice(0, 1000), photos: [], createdAt: now, intervalId: id }];
+        }
+        set({ intervals, memories, undoData: before, lastReply: { text: `${fmtHM(start)}–${end === null ? '지금' : fmtHM(end)} ${nameOf(before, next.activityId)}(으)로 고쳤어.`, at: now, undo: true } });
       },
 
       setCellNote: (at, text) => {
@@ -934,6 +980,27 @@ export const useStore = create<Store>()(
         const s = text.trim().slice(0, 40);
         if (!s) return;
         set({ todos: get().todos.map((t) => (t.id === id ? withSteps(t, [...(t.steps ?? []), { text: s, done: false }]) : t)) });
+      },
+
+      renameStep: (id, index, text) => {
+        const t = text.trim().slice(0, 40);
+        if (!t) return;
+        set({ todos: get().todos.map((x) => (x.id === id && x.steps ? { ...x, steps: x.steps.map((st, i) => (i === index ? { ...st, text: t } : st)) } : x)) });
+      },
+
+      updateNote: (id, patch) =>
+        set({
+          notes: get().notes.map((n) => (n.id === id ? { ...n, ...(patch.text !== undefined ? { text: patch.text.trim().slice(0, 200) || n.text } : {}), ...(patch.value ? { value: patch.value } : {}) } : n)),
+        }),
+
+      removeNote: (id) => {
+        const before = pickData(get());
+        set({ notes: before.notes.filter((n) => n.id !== id), undoData: before, lastReply: { text: '지웠어.', at: Date.now(), undo: true } });
+      },
+
+      updateFocus: (id, from, to) => {
+        if (!(to > from) || from < 0 || to > 26) return;
+        set({ focus: get().focus.map((f) => (f.id === id ? { ...f, from, to } : f)) });
       },
 
       removeStep: (id, index) =>

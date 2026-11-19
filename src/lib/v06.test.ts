@@ -217,3 +217,37 @@ describe('분류 안 되는 말은 한마디로', () => {
     expect(useStore.getState().intervals.filter((iv) => iv.kind === 'exec')).toHaveLength(0);
   });
 });
+
+describe('일정 고치기(분 단위)', () => {
+  it('칠한 한 일의 시각·활동을 분 단위로 고치고, 그 일정의 한마디를 붙였다 떼었다 한다', async () => {
+    const { useStore, emptyData } = await import('../store');
+    useStore.setState({ ...emptyData(), undoData: null, lastReply: null });
+    const base = Math.floor((Date.now() - 5 * 3600_000) / 600_000) * 600_000;
+    const st = useStore.getState();
+    st.paintRange(base, 3, 'exec', 'study');
+    const id = useStore.getState().intervals[0].id;
+    st.editInterval(id, { start: base + 3 * 60_000, end: base + 27 * 60_000, activityId: 'hw', memo: '미적분 3단원' });
+    let s = useStore.getState();
+    expect(s.intervals[0]).toMatchObject({ start: base + 3 * 60_000, end: base + 27 * 60_000, activityId: 'hw' });
+    expect(s.memories).toHaveLength(1);
+    expect(s.memories[0]).toMatchObject({ intervalId: id, text: '미적분 3단원', start: base + 3 * 60_000 });
+    // 시각을 또 옮기면 한마디도 따라온다
+    st.editInterval(id, { end: base + 30 * 60_000 });
+    s = useStore.getState();
+    expect(s.memories[0].end).toBe(base + 30 * 60_000);
+    // 한마디를 비우면 떨어진다
+    st.editInterval(id, { memo: '' });
+    expect(useStore.getState().memories).toHaveLength(0);
+    // 한 일은 지금보다 뒤로 끝날 수 없다
+    st.editInterval(id, { end: Date.now() + 3600_000 });
+    expect(useStore.getState().intervals[0].end!).toBeLessThanOrEqual(Date.now());
+  });
+
+  it('칸의 일부만 차지하면 그만큼만 칠한다', async () => {
+    const { frac } = await import('../components/Grid');
+    const cs = 1_000_000_000_000 - (1_000_000_000_000 % 600_000);
+    const iv = (s: number, e: number) => ({ id: 'x', activityId: 'study', kind: 'exec' as const, start: cs + s * 60_000, end: cs + e * 60_000, source: 'paint' as const });
+    expect(frac([iv(3, 7)], 'exec', 'study', cs, cs)).toEqual([0.3, 0.7]);
+    expect(frac([iv(-5, 20)], 'exec', 'study', cs, cs)).toEqual([0, 1]);
+  });
+});

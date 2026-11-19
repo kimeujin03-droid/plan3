@@ -1395,7 +1395,7 @@ a.link {
 
 .frow {
   display: grid;
-  grid-template-columns: 22px repeat(6, minmax(0, 1fr));
+  grid-template-columns: 22px minmax(0, 1fr);
   gap: 3px;
   align-items: center;
 }
@@ -2642,4 +2642,149 @@ a.link {
 .today-top .datebar,
 .today-top .datebar button {
   height: 40px;
+}
+
+/* 분 단위 시각 고르기 */
+.tf-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.tf {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 16px;
+  background: var(--bg);
+}
+.tf-label {
+  font-size: 12px;
+  color: var(--sub);
+}
+.tf-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+.tf-row > button {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: #fff;
+  font-size: 18px;
+}
+.tf-time {
+  position: relative;
+  flex: 1;
+  text-align: center;
+  font-size: 22px;
+  min-width: 0;
+}
+.tf-time input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+}
+/* 일정에 붙은 한마디는 띠 위에 글만(상자 없이) */
+.memo-box.linked {
+  background: transparent !important;
+  border-color: transparent !important;
+}
+.memo-box.linked span {
+  text-align: right;
+  font-weight: 500;
+}
+.memo-box.linked span::before {
+  content: '💬 ';
+}
+
+/* 집중도: 1분 단위 띠 */
+.fbar {
+  position: relative;
+  display: flex;
+  height: 22px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.fbar i {
+  height: 22px;
+  min-width: 0;
+  border-radius: 0;
+  font-style: normal;
+  font-size: 11px;
+  line-height: 22px;
+  text-align: center;
+  overflow: hidden;
+}
+.fbar .fnow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--ink);
+}
+.fticks {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  font-size: 10px;
+  color: var(--sub);
+}
+.fticks em {
+  font-style: normal;
+}
+
+.wk-focus select {
+  border: 0;
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+  font-size: 12px;
+  padding: 2px 2px;
+}
+.wk-focus .wk-focus-name {
+  background: none;
+  min-width: 0;
+  min-height: 0;
+  font-size: 13px;
+  padding: 0;
+}
+.step-edit {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  padding: 2px 0;
+  border-bottom: 1px dashed transparent;
+}
+.step-edit:focus {
+  outline: none;
+  border-bottom-color: var(--sub);
+}
+.mood-row {
+  width: 100%;
+  background: none;
+  padding: 2px 0;
+  text-align: left;
+}
+.mood-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 14px;
+  background: var(--bg);
+}
+.mood-face {
+  background: #fff;
+  border-radius: 12px;
+  padding: 2px 4px;
+}
+.mood-face[aria-pressed='true'] {
+  box-shadow: inset 0 0 0 2px var(--ink);
 }

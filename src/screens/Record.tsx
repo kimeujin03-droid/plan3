@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Chevron } from '../components/common';
 import { Grid } from '../components/Grid';
 import { MemoSheet } from '../components/MemoSheet';
+import { SlotSheet } from '../components/SlotSheet';
+import type { Interval } from '../lib/types';
 import { CategoryChips } from '../components/Pickers';
 import { addDays, CELL, dayStart, fmtDate, fmtHM } from '../lib/time';
 import type { Memory } from '../lib/types';
@@ -61,6 +63,7 @@ export function Record({ now }: { now: number }) {
   });
   const intervals = useStore((s) => s.intervals);
   const memories = useStore((s) => s.memories);
+  const [slot, setSlot] = useState<{ at: number; ivs: Interval[] } | null>(null);
   const [actId, setActId] = useState(activities[0].id);
   // 한마디: 먼저 누른 칸
   const [anchor, setAnchor] = useState<number | null>(null);
@@ -176,12 +179,40 @@ export function Record({ now }: { now: number }) {
             }}
             onMemo={(from, to, memory) => {
               setAnchor(null);
+              // 한 칸을 꾸욱: 그 칸에 일정이 있으면 일정 고치기(시각·활동·한마디), 없으면 한마디
+              if (from === to) {
+                const at = day + from * CELL;
+                const here = intervals
+                  .filter((iv) => iv.start < at + CELL && (iv.end ?? now) > at)
+                  .sort((a, b) => Number(a.kind !== (kind === 'plan' ? 'plan' : 'exec')) - Number(b.kind !== (kind === 'plan' ? 'plan' : 'exec')) || a.start - b.start);
+                if (here.length) {
+                  setSlot({ at, ivs: here });
+                  return;
+                }
+              }
               setOpen({ from, to, memory });
             }}
           />
         </div>
       )}
       {view === 'stats' && <Review now={now} />}
+      {slot && (
+        <SlotSheet
+          key={`${slot.at}-${slot.ivs.map((x) => x.id).join()}`}
+          at={slot.at}
+          ivs={slot.ivs}
+          now={now}
+          onClose={() => setSlot(null)}
+          onMemo={(m) => {
+            setSlot(null);
+            if (m) setOpen({ from: Math.max(0, Math.floor((m.start - day) / CELL)), to: Math.min(143, Math.ceil((m.end - day) / CELL) - 1), memory: m });
+            else {
+              const i = Math.floor((slot.at - day) / CELL);
+              setOpen({ from: i, to: i, memory: null });
+            }
+          }}
+        />
+      )}
       {open && (
         <MemoSheet
           key={`${day}-${open.from}-${open.to}-${open.memory?.id ?? ''}`}

@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { Moa, type MoaMood } from '../components/Moa';
 import { StartGrid } from '../components/Pickers';
-import { focusCells } from '../lib/focus';
+import { focusCells, focusRuns } from '../lib/focus';
 import { activeIntervals } from '../lib/intervals';
 import { FOCUS_SHADE, SLEEP_ID } from '../lib/palette';
-import { CELL, fmtClock, fmtHM, HOUR } from '../lib/time';
+import { fmtClock, fmtHM, HOUR } from '../lib/time';
+
+const MINUTE = 60_000;
 import { useStore } from '../store';
 
 type Mode = 'stopwatch' | 'timer' | 'pomo';
@@ -17,8 +19,8 @@ const UNRATED = '#D5D9E8';
 const R = 130;
 const LEN = 2 * Math.PI * R;
 
-/** 가운데에 모아와 숫자가 있는 원. progress(0~1)를 주면 그만큼 채운 한 줄, colors를 주면 10분 여섯 칸. */
-function Ring({ colors, progress, digits, label, mood }: { colors?: string[]; progress?: number; digits: string; label: string; mood: MoaMood }) {
+/** 가운데에 모아와 숫자가 있는 원. progress(0~1)를 주면 그만큼 채운 한 줄, arcs를 주면 이번 한 시간을 분 단위 색 조각으로. */
+function Ring({ arcs, progress, digits, label, mood }: { arcs?: { from: number; to: number; color: string }[]; progress?: number; digits: string; label: string; mood: MoaMood }) {
   return (
     <div className="ring">
       <svg viewBox="0 0 320 320" fill="none" aria-hidden="true">
@@ -28,9 +30,21 @@ function Ring({ colors, progress, digits, label, mood }: { colors?: string[]; pr
             <circle cx="160" cy="160" r={R} stroke="#26233A" strokeWidth="22" strokeLinecap="round" strokeDasharray={`${Math.max(0.001, Math.min(1, progress)) * LEN} ${LEN}`} transform="rotate(-90 160 160)" />
           </>
         ) : (
-          (colors ?? []).map((color, k) => (
-            <circle key={k} cx="160" cy="160" r={R} stroke={color} strokeWidth="22" strokeLinecap="round" strokeDasharray="118 698.81" transform={`rotate(${-86 + 60 * k} 160 160)`} />
-          ))
+          <>
+            <circle cx="160" cy="160" r={R} stroke="#FFFFFF" strokeWidth="22" />
+            {(arcs ?? []).map((a, k) => (
+              <circle
+                key={k}
+                cx="160"
+                cy="160"
+                r={R}
+                stroke={a.color}
+                strokeWidth="22"
+                strokeDasharray={`${((a.to - a.from) / 60) * LEN} ${LEN}`}
+                transform={`rotate(${-90 + a.from * 6} 160 160)`}
+              />
+            ))}
+          </>
         )}
       </svg>
       <div className="center">
@@ -44,32 +58,44 @@ function Ring({ colors, progress, digits, label, mood }: { colors?: string[]; pr
   );
 }
 
-/** 이번 작업의 집중도를 하루 격자처럼 10분 칸으로 쌓아 보여준다. 안 누른 칸은 앞의 값이 이어진다. */
+/** 이번 작업의 집중도를 1분 단위 띠로(한 줄이 한 시간). 누른 자리에 숫자, 안 누른 동안은 앞의 값이 이어진다. */
 function FocusGrid({ activityId, start, now }: { activityId: string; start: number; now: number }) {
   const samples = useStore((s) => s.samples);
-  const cells = focusCells(samples, activityId, start, now);
+  const cells = focusCells(samples, activityId, start, now + MINUTE, MINUTE);
   // 최근 세 시간만, 시간 줄에 맞춰서.
   const lastHour = Math.floor(now / HOUR) * HOUR;
   const firstHour = Math.max(Math.floor(start / HOUR) * HOUR, lastHour - 2 * HOUR);
-  const byAt = new Map(cells.map((c) => [c.at, c]));
   const rows: number[] = [];
   for (let h = firstHour; h <= lastHour; h += HOUR) rows.push(h);
   return (
-    <div className="focusgrid" role="img" aria-label="이번 작업의 10분별 집중도">
-      {rows.map((h) => (
-        <div key={h} className="frow">
-          <span>{String(new Date(h).getHours()).padStart(2, '0')}</span>
-          {Array.from({ length: 6 }, (_, k) => {
-            const c = byAt.get(h + k * CELL);
-            const isNow = now >= h + k * CELL && now < h + (k + 1) * CELL;
-            return (
-              <i key={k} data-now={isNow} style={{ background: c ? (c.value ? FOCUS_SHADE[c.value] : UNRATED) : undefined, color: c?.value === 5 ? '#fff' : undefined }}>
-                {c?.picked ? c.value : ''}
-              </i>
-            );
-          })}
+    <div className="focusgrid" role="img" aria-label="이번 작업의 1분별 집중도">
+      {rows.map((h) => {
+        const runs = focusRuns(cells.filter((c) => c.at >= h && c.at < h + HOUR));
+        const lead = runs.length ? (runs[0].at - h) / MINUTE : 60;
+        return (
+          <div key={h} className="frow">
+            <span>{String(new Date(h).getHours()).padStart(2, '0')}</span>
+            <div className="fbar">
+              {lead > 0 && <i style={{ flex: lead, background: 'transparent' }} />}
+              {runs.map((r) => (
+                <i key={r.at} style={{ flex: r.minutes, background: r.value ? FOCUS_SHADE[r.value] : UNRATED, color: r.value === 5 ? '#fff' : undefined }}>
+                  {r.picked && r.minutes >= 3 ? r.value : ''}
+                </i>
+              ))}
+              {h === lastHour && <i style={{ flex: Math.max(0, 60 - lead - runs.reduce((a, r) => a + r.minutes, 0)), background: 'transparent' }} />}
+              {h === lastHour && <b className="fnow" style={{ left: `${((now - h) / HOUR) * 100}%` }} />}
+            </div>
+          </div>
+        );
+      })}
+      <div className="frow">
+        <span />
+        <div className="fticks">
+          {[0, 10, 20, 30, 40, 50].map((m) => (
+            <em key={m}>{m === 0 ? '정각' : m}</em>
+          ))}
         </div>
-      ))}
+      </div>
     </div>
   );
 }
@@ -139,7 +165,7 @@ export function Clock({ now }: { now: number }) {
           ))}
         </div>
         <Ring
-          colors={Array(6).fill('#FFFFFF')}
+          arcs={[]}
           digits={mode === 'stopwatch' ? '0:00:00' : `${minutes}:00`}
           label={paused ? `${nameOf(paused)} 쉬는 중` : mode === 'pomo' ? `${minutes}분 집중 · 5분 쉬기` : mode === 'timer' ? '시간이 되면 알려줄게' : '멈춰 있어'}
           mood={paused ? 'smile' : 'idle'}
@@ -170,9 +196,9 @@ export function Clock({ now }: { now: number }) {
   }
 
   const counting = timer && timer.activityId === main.activityId && (timer.phase === 'focus' || timer.phase === 'over') ? timer : null;
-  const cells = focusCells(s.samples, main.activityId, main.start, now);
+  const cells = focusCells(s.samples, main.activityId, main.start, now + MINUTE, MINUTE);
   const current = cells[cells.length - 1];
-  let ring: { colors?: string[]; progress?: number; digits: string; label: string };
+  let ring: { arcs?: { from: number; to: number; color: string }[]; progress?: number; digits: string; label: string };
   if (counting) {
     const total = counting.minutes * 60_000;
     const left = counting.phaseStart + total - now;
@@ -181,17 +207,15 @@ export function Clock({ now }: { now: number }) {
         ? { progress: 1 - left / total, digits: fmtClock(left).replace(/^0:/, ''), label: counting.mode === 'pomo' ? `뽀모도로 ${counting.round}번째` : `${counting.minutes}분 타이머` }
         : { progress: 1, digits: `+${fmtClock(-left).replace(/^0:/, '')}`, label: `${counting.minutes}분 넘겼어` };
   } else {
-    // 이번 한 시간의 10분 여섯 칸. 지난 칸은 (이어진) 집중도 색으로.
+    // 이번 한 시간을 분 단위로: 지난 분은 (이어진) 집중도 색, 지금 분은 진하게.
     const hourStart = Math.floor(now / HOUR) * HOUR;
-    const byAt = new Map(cells.map((c) => [c.at, c]));
+    const runs = focusRuns(cells.filter((c) => c.at >= hourStart && c.at < Math.floor(now / MINUTE) * MINUTE));
+    const nowMin = (now - hourStart) / MINUTE;
     ring = {
-      colors: Array.from({ length: 6 }, (_, k) => {
-        const cs = hourStart + k * CELL;
-        if (cs > now) return '#FFFFFF';
-        if (now < cs + CELL) return '#26233A';
-        const c = byAt.get(cs);
-        return c ? (c.value ? FOCUS_SHADE[c.value] : UNRATED) : '#FFFFFF';
-      }),
+      arcs: [
+        ...runs.map((r) => ({ from: (r.at - hourStart) / MINUTE, to: (r.at - hourStart) / MINUTE + r.minutes, color: r.value ? FOCUS_SHADE[r.value] : UNRATED })),
+        { from: Math.floor(nowMin), to: Math.max(Math.floor(nowMin) + 0.6, nowMin), color: '#26233A' },
+      ],
       digits: fmtClock(now - main.start),
       label: '하는 중',
     };

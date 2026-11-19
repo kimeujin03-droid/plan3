@@ -164,6 +164,8 @@ export function WeekPlanSheet({ initialText = '', onClose }: { initialText?: str
   const activities = useStore((s) => s.activities);
   const focus = useStore((s) => s.focus);
   const removeFocus = useStore((s) => s.removeFocus);
+  const updateFocus = useStore((s) => s.updateFocus);
+  const [focusEdit, setFocusEdit] = useState<string | null>(null);
   const ai = useStore((s) => s.ai);
   const setAi = useStore((s) => s.setAi);
   const apiOverride = useStore((s) => s.apiOverride);
@@ -391,14 +393,40 @@ export function WeekPlanSheet({ initialText = '', onClose }: { initialText?: str
                 <span className="sub" style={{ fontSize: 13 }}>
                   집중 잘 되는 시간
                 </span>
-                {focus.map((f) => (
-                  <span key={f.id} className="wk-focus">
-                    {f.word} {hourLabel(f.from)}–{hourLabel(f.to)}
-                    <button type="button" aria-label={`${f.word} 집중 시간 지우기`} onClick={() => removeFocus(f.id)}>
-                      ✕
-                    </button>
-                  </span>
-                ))}
+                {focus.map((f) =>
+                  focusEdit === f.id ? (
+                    <span key={f.id} className="wk-focus">
+                      {f.word}
+                      <select aria-label={`${f.word} 시작`} value={f.from} onChange={(e) => updateFocus(f.id, Number(e.target.value), Math.max(f.to, Number(e.target.value) + 1))}>
+                        {Array.from({ length: 26 }, (_, h) => (
+                          <option key={h} value={h}>
+                            {hourLabel(h)}
+                          </option>
+                        ))}
+                      </select>
+                      –
+                      <select aria-label={`${f.word} 끝`} value={f.to} onChange={(e) => updateFocus(f.id, f.from, Number(e.target.value))}>
+                        {Array.from({ length: 26 - f.from }, (_, k) => f.from + 1 + k).map((h) => (
+                          <option key={h} value={h}>
+                            {hourLabel(h)}
+                          </option>
+                        ))}
+                      </select>
+                      <button type="button" aria-label="다 고침" onClick={() => setFocusEdit(null)}>
+                        ✓
+                      </button>
+                    </span>
+                  ) : (
+                    <span key={f.id} className="wk-focus">
+                      <button type="button" className="wk-focus-name" aria-label={`${f.word} 집중 시간 고치기`} onClick={() => setFocusEdit(f.id)}>
+                        {f.word} {hourLabel(f.from)}–{hourLabel(f.to)}
+                      </button>
+                      <button type="button" aria-label={`${f.word} 집중 시간 지우기`} onClick={() => removeFocus(f.id)}>
+                        ✕
+                      </button>
+                    </span>
+                  ),
+                )}
               </div>
             )}
             {error && (

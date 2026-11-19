@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { cellInfo } from '../lib/intervals';
 import { soft } from '../lib/palette';
 import { CELL, DAY, dayStart } from '../lib/time';
-import type { Memory } from '../lib/types';
+import type { Interval, Memory } from '../lib/types';
 import { useStore } from '../store';
 
 interface Props {
@@ -37,6 +37,33 @@ const TOP = 10;
 const BOTTOM = 84;
 const SPLIT = 52;
 const GAP = 4;
+const FULL: [number, number] = [0, 1];
+
+/** 칸 안에서 그 활동이 차지하는 가로 범위(0~1). 분 단위로 기록한 것을 그만큼만 칠하려고. */
+export function frac(list: Interval[], kind: 'plan' | 'exec', act: string, cs: number, now: number): [number, number] {
+  const ce = cs + CELL;
+  let lo = ce;
+  let hi = cs;
+  for (const iv of list) {
+    if (iv.kind !== kind || iv.activityId !== act) continue;
+    const e = iv.end ?? now;
+    if (iv.start >= ce || e <= cs) continue;
+    lo = Math.min(lo, Math.max(iv.start, cs));
+    hi = Math.max(hi, Math.min(e, ce));
+  }
+  if (hi <= lo) return FULL;
+  const a = (lo - cs) / CELL;
+  const b = (hi - cs) / CELL;
+  // 1분보다 작은 차이는 꽉 찬 것으로(칸 경계가 어긋나 보이지 않게)
+  return [a < 0.1 ? 0 : a, b > 0.9 ? 1 : b];
+}
+
+/** 가로 범위를 left/right 스타일로. 꽉 차면 원래대로(옆 칸과 이어 그리게 -1px) */
+function xs([a, b]: [number, number]) {
+  if (a === 0 && b === 1) return {};
+  return { left: `${a * 100}%`, right: b === 1 ? '-1px' : `${(1 - b) * 100}%` };
+}
+
 /** 메모 글이 한 칸에 대략 몇 글자 들어가는지(줄마다 이어서 쓴다) */
 const CHARS_PER_CELL = 4;
 
@@ -59,6 +86,8 @@ export interface MemoBox {
   last: boolean;
   text: string;
   color: string;
+  /** 일정에 붙은 한마디: 상자 없이 띠 위에 글만 */
+  linked?: boolean;
 }
 
 /** 메모 하나를 줄(시간)마다 상자로 나누고, 글을 상자 순서대로 이어서 나눠 담는다. */
@@ -77,7 +106,7 @@ export function memoBoxes(m: Memory, day: number, color: string, label: string):
     let text = rest.slice(0, room);
     rest = rest.slice(room);
     if (last && rest) text = `${text.slice(0, -1)}…`;
-    out.push({ key: `${m.id}-${row}`, row, col: from % 6, span, first: from === a, last, text, color });
+    out.push({ key: `${m.id}-${row}`, row, col: from % 6, span, first: from === a, last, text, color, ...(m.intervalId ? { linked: true } : {}) });
   }
   return out;
 }
@@ -108,13 +137,21 @@ export function Grid({ day, kind, erasing, activityId, now, onMemo, select = fal
       const n = i % 6 === 5 ? none : infos[i + 1];
       const e1 = c.exec[0] ?? null;
       const e2 = c.exec[1] ?? null;
+      // 분 단위: 칸의 일부만 차지하면 그만큼만 칠한다(예: 10:03~10:07).
+      const cs = day + i * CELL;
+      const fp = c.plan ? frac(dayIv, 'plan', c.plan, cs, now) : FULL;
+      const f1 = e1 ? frac(dayIv, 'exec', e1, cs, now) : FULL;
+      const f2 = e2 ? frac(dayIv, 'exec', e2, cs, now) : FULL;
       return {
         planBg: c.plan ? soft(byId.get(c.plan)?.color ?? '#cccccc') : undefined,
+        planX: fp,
         e1Bg: e1 ? byId.get(e1)?.color : undefined,
+        e1X: f1,
         // 둘째 일이 생기거나 사라지는 자리에서는 높이가 달라지므로 모서리를 닫는다.
-        e1R: radius(p.exec[0] === e1 && !!p.exec[1] === !!e2, n.exec[0] === e1 && !!n.exec[1] === !!e2),
+        e1R: radius(f1[0] === 0 && p.exec[0] === e1 && !!p.exec[1] === !!e2, f1[1] === 1 && n.exec[0] === e1 && !!n.exec[1] === !!e2),
         e2Bg: e2 ? byId.get(e2)?.color : undefined,
-        e2R: radius(p.exec[1] === e2, n.exec[1] === e2),
+        e2X: f2,
+        e2R: radius(f2[0] === 0 && p.exec[1] === e2, f2[1] === 1 && n.exec[1] === e2),
         two: !!e2,
         label: e1 && p.exec[0] !== e1 ? byId.get(e1)?.name ?? '' : '',
         planLabel: !e1 && c.plan && p.plan !== c.plan ? byId.get(c.plan)?.name ?? '' : '',
@@ -270,9 +307,9 @@ export function Grid({ day, kind, erasing, activityId, now, onMemo, select = fal
         >
           {cells.map((c, i) => (
             <div className={sel && i >= sel[0] && i <= sel[1] ? 'cell sel' : 'cell'} key={i}>
-              {c.planBg && <i className="plan" style={{ background: c.planBg }} />}
-              {c.e1Bg && <i className="exec" style={{ background: c.e1Bg, borderRadius: c.e1R, top: `${TOP}%`, bottom: `${100 - (c.two ? SPLIT : BOTTOM)}%` }} />}
-              {c.e2Bg && <i className="exec" style={{ background: c.e2Bg, borderRadius: c.e2R, top: `${SPLIT + GAP}%`, bottom: `${100 - BOTTOM}%` }} />}
+              {c.planBg && <i className="plan" style={{ background: c.planBg, ...xs(c.planX) }} />}
+              {c.e1Bg && <i className="exec" style={{ background: c.e1Bg, borderRadius: c.e1R, top: `${TOP}%`, bottom: `${100 - (c.two ? SPLIT : BOTTOM)}%`, ...xs(c.e1X) }} />}
+              {c.e2Bg && <i className="exec" style={{ background: c.e2Bg, borderRadius: c.e2R, top: `${SPLIT + GAP}%`, bottom: `${100 - BOTTOM}%`, ...xs(c.e2X) }} />}
               {c.label && <span className={c.two ? 'l1 small' : 'l1'}>{c.label}</span>}
               {c.planLabel && <span className="l1 muted">{c.planLabel}</span>}
               {c.label2 && <span className="l2">{c.label2}</span>}
@@ -285,7 +322,7 @@ export function Grid({ day, kind, erasing, activityId, now, onMemo, select = fal
           {boxes.map((b) => (
             <div
               key={b.key}
-              className="memo-box"
+              className={b.linked ? 'memo-box linked' : 'memo-box'}
               style={{
                 top: `calc(var(--row) * ${b.row} + 2px)`,
                 left: `${(b.col / 6) * 100}%`,
