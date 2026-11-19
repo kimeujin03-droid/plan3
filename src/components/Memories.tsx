@@ -4,9 +4,11 @@ import { MOOD_WORDS, useStore } from '../store';
 import { Moa } from './Moa';
 import { MOOD_FACE } from './MoodLog';
 import { Photo } from './Photo';
+import { MemoSheet } from './MemoSheet';
+import { useState } from 'react';
 
 /** 기억 하나: 시간, 활동, 글, 장소·사람, 기분, 사진 */
-export function MemoryCard({ m, onRemove }: { m: Memory; onRemove?: () => void }) {
+export function MemoryCard({ m, onRemove, onEdit }: { m: Memory; onRemove?: () => void; onEdit?: () => void }) {
   const act = useStore((s) => s.activities.find((a) => a.id === m.activityId));
   const plan = useStore((s) => (m.todoId ? s.todos.find((t) => t.id === m.todoId) : undefined));
   return (
@@ -24,6 +26,11 @@ export function MemoryCard({ m, onRemove }: { m: Memory; onRemove?: () => void }
           {fmtDur(m.end - m.start)}
         </span>
         {m.mood && <Moa size={30} mood={MOOD_FACE[m.mood]} decorative />}
+        {onEdit && (
+          <button className="pill" style={{ background: 'var(--bg)', minHeight: 32, padding: '0 12px', fontSize: 13 }} aria-label="한마디 고치기" onClick={onEdit}>
+            고치기
+          </button>
+        )}
         {onRemove && (
           <button className="step-x" aria-label="기억 지우기" onClick={onRemove}>
             ×
@@ -54,6 +61,7 @@ export function MemoryCard({ m, onRemove }: { m: Memory; onRemove?: () => void }
 export function MemoryList() {
   const memories = useStore((s) => s.memories);
   const remove = useStore((s) => s.removeMemory);
+  const [editing, setEditing] = useState<Memory | null>(null);
   const sorted = [...memories].sort((a, b) => b.start - a.start);
   const days: { day: number; items: Memory[] }[] = [];
   for (const m of sorted) {
@@ -62,7 +70,8 @@ export function MemoryList() {
     if (last && last.day === d) last.items.push(m);
     else days.push({ day: d, items: [m] });
   }
-  if (!days.length) return <div className="empty">기록 › 하루 › 구간에서 시간을 고르면, 그 시간에 있었던 일을 글·사진으로 남길 수 있어.</div>;
+  if (!days.length)
+    return <div className="empty">기록 › 하루에서 칸을 꾸욱 누르거나 한마디 탭에서 시간을 고르면, 그 시간에 있었던 일을 글·사진으로 남길 수 있어. 채팅에 그냥 적어도 한마디가 돼.</div>;
   return (
     <>
       {days.map(({ day, items }) => (
@@ -71,10 +80,13 @@ export function MemoryList() {
             {fmtDayLong(day)}
           </div>
           {items.map((m) => (
-            <MemoryCard key={m.id} m={m} onRemove={() => remove(m.id)} />
+            <MemoryCard key={m.id} m={m} onRemove={() => remove(m.id)} onEdit={() => setEditing(m)} />
           ))}
         </div>
       ))}
+      {editing && (
+        <MemoSheet day={dayStart(editing.start)} from={editing.start} to={editing.end} memory={editing} now={Date.now()} onClose={() => setEditing(null)} />
+      )}
     </>
   );
 }

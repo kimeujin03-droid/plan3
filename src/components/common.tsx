@@ -143,8 +143,8 @@ export function InputBar({ placeholder = '모아야, 나 지금…' }: { placeho
   );
 }
 
-const TOAST_MS = 3500;
-const TOAST_UNDO_MS = 6000;
+const TOAST_MS = 3000;
+const TOAST_UNDO_MS = 5000;
 
 /**
  * 모아의 한마디. 화면을 밀어내지 않고 입력창 위에 잠깐 떴다가 스스로 사라진다.

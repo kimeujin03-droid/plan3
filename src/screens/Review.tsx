@@ -57,7 +57,7 @@ export function Review({ now }: { now: number }) {
           기분
         </button>
         <button aria-pressed={tab === 'raw'} onClick={() => setTab('raw')}>
-          내가 한 말
+          한 말
         </button>
       </div>
 

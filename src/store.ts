@@ -98,6 +98,8 @@ interface Store extends Data {
   endActivityAt: (activityId: string, at: number) => void;
   /** 비어 있던 시간을 한 번에 채운다. */
   fillGap: (activityId: string, start: number, end: number) => void;
+  /** 빈 시간을 여러 조각으로 나눠 한 번에 채운다. 한 번에 되돌린다. */
+  fillGaps: (parts: { activityId: string; start: number; end: number }[]) => void;
   dismissReply: () => void;
   /** 방금 무언가를 끝낸 시각. 모아가 잠깐 신나 한다. 저장하지 않는다. */
   cheerAt: number;
@@ -387,8 +389,14 @@ export function applyCommand(d: Data, cmd: Command, now: number): string {
       return '알겠어. 먼저 말 걸지 않을게.';
     }
     case 'memo': {
-      d.notes = [...d.notes, { id: uid('note'), at: now, kind: 'memo', text: cmd.text }];
-      return '메모로 적어뒀어.';
+      // 활동으로 나눌 수 없는 말은 지금 칸의 한마디가 된다(기록 격자에 보이고, 눌러서 고칠 수 있다).
+      const start = Math.floor(now / CELL) * CELL;
+      const running = activeIntervals(d.intervals).find((iv) => iv.activityId !== SLEEP_ID);
+      d.memories = [
+        ...d.memories,
+        { id: uid('mem'), start, end: start + CELL, activityId: running?.activityId ?? null, text: cmd.text.slice(0, 500), photos: [], createdAt: now },
+      ];
+      return `${fmtHM(start)} 한마디로 남겼어.`;
     }
     case 'chat':
       return cmd.text;
@@ -784,6 +792,16 @@ export const useStore = create<Store>()(
           undoData: before,
           lastReply: { text: `${fmtHM(start)}–${fmtHM(end)} ${nameOf(before, activityId)}(으)로 채웠어.`, at: Date.now(), undo: true },
         });
+      },
+
+      fillGaps: (parts) => {
+        const ok = parts.filter((p) => p.end > p.start);
+        if (!ok.length) return;
+        const before = pickData(get());
+        let intervals = before.intervals;
+        for (const p of ok) intervals = mergeAdd(intervals, { activityId: p.activityId, kind: 'exec', start: p.start, end: p.end, source: 'chat' });
+        const text = ok.map((p) => `${fmtHM(p.start)}–${fmtHM(p.end)} ${nameOf(before, p.activityId)}`).join(', ');
+        set({ intervals, undoData: before, lastReply: { text: `${text}(으)로 채웠어.`, at: Date.now(), undo: true } });
       },
 
       rateFocus: (value) => {

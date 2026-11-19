@@ -247,7 +247,9 @@ export function Grid({ day, kind, erasing, activityId, now, onMemo, select = fal
               const a = Math.min(...memoSel);
               const b = Math.max(...memoSel);
               // 한 칸만 꾸욱 눌렀고 그 자리에 메모가 있으면 그 메모를 고친다.
-              onMemo(a, b, a === b ? memoAt(a) : null);
+              // 고른 칸이 모두 한 한마디 안이면 그 한마디를 고친다(손가락이 조금 움직여도).
+              const ma = memoAt(a);
+              onMemo(a, b, ma && ma === memoAt(b) ? ma : null);
             } else if (d.down && !d.on) {
               if (select) onTapCell?.(d.first);
               else {

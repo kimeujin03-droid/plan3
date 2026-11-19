@@ -6,7 +6,7 @@
   --line: #e6e8f1;
   --moa: #cfc6f3;
   --screen: #1e1b2e;
-  --row: 50px;
+  --row: 46px;
   font-family: 'Gowun Dodum', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
   color: var(--ink);
   -webkit-tap-highlight-color: transparent;
@@ -950,6 +950,7 @@ a.link {
 }
 
 .start {
+  white-space: nowrap;
   min-height: 56px;
   padding: 0 16px;
   border-radius: 20px;
@@ -1262,7 +1263,9 @@ a.link {
 }
 
 .start.split .grow {
-  padding-left: 48px;
+  min-width: 0;
+  overflow: hidden;
+  padding-left: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1271,7 +1274,7 @@ a.link {
 
 .start.split .more {
   flex: none;
-  width: 48px;
+  width: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2397,8 +2400,8 @@ a.link {
   color: var(--ink);
 }
 .wg-head [data-today='true'] b {
-  display: inline-block;
-  min-width: 24px;
+  width: 26px;
+  margin: 0 auto;
   border-radius: 12px;
   background: var(--ink);
   color: #fff;
@@ -2561,4 +2564,82 @@ a.link {
   width: 16px;
   height: 16px;
   accent-color: var(--ink);
+}
+
+/* 빈 시간 나눠 채우기 */
+.chips.wrap {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+.gap-bar {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+  border-radius: 7px;
+  overflow: hidden;
+}
+.gap-bar i {
+  display: block;
+  min-width: 4px;
+}
+.gap-part {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--bg);
+}
+.gap-part .chip {
+  min-height: 34px;
+}
+.gap-part .chip[aria-pressed='true'] {
+  box-shadow: inset 0 0 0 2.5px var(--ink);
+}
+.gap-time {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: #fff;
+  font-size: 15px;
+}
+.gap-time span[aria-hidden] {
+  font-size: 11px;
+  color: var(--sub);
+}
+.gap-time input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+}
+
+.plan-tools {
+  flex-shrink: 0;
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+  min-width: 0;
+}
+.plan-tools .wk-open {
+  width: auto;
+  flex: none;
+  padding: 8px 14px;
+}
+.plan-tools .period-bar {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 기록 화면 위쪽을 낮게: 격자가 한 줄이라도 더 보이게 */
+.today-top > .seg:first-child button {
+  height: 38px;
+}
+.today-top .datebar,
+.today-top .datebar button {
+  height: 40px;
 }

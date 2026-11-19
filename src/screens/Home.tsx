@@ -7,7 +7,7 @@ import { logicalToday } from '../lib/day';
 import { findGap } from '../lib/gaps';
 import { activeIntervals } from '../lib/intervals';
 import { SLEEP_ID } from '../lib/palette';
-import { fmtDate, fmtDur, fmtHM } from '../lib/time';
+import { DAY, fmtDate, fmtDur, fmtHM } from '../lib/time';
 import { useStore } from '../store';
 import { byUrgency, GoalRow, TodoRow, whenOf } from './Todos';
 
@@ -23,10 +23,12 @@ function GapCard({ now }: { now: number }) {
   const activities = useStore((s) => s.activities);
   const fillGap = useStore((s) => s.fillGap);
   const [skipped, setSkipped] = useState<number[]>([]);
+  const [splitting, setSplitting] = useState(false);
   const gap = findGap(intervals, now);
   if (!gap || skipped.includes(gap.start)) return null;
   return (
     <div className="card" style={{ gap: 8 }}>
+      {splitting && <GapSplitSheet start={gap.start} end={gap.end} onClose={() => setSplitting(false)} />}
       <div className="row between">
         <div style={{ fontSize: 15 }}>
           <span className="jua">
@@ -38,17 +40,157 @@ function GapCard({ now }: { now: number }) {
           몰라
         </button>
       </div>
-      <div className="chips">
+      <div className="chips wrap">
         {activities
-          .filter((a) => a.id !== SLEEP_ID)
+          .filter((a) => a.id !== SLEEP_ID && !a.parentId)
           .map((a) => (
             <button key={a.id} className="chip" style={{ background: a.color }} onClick={() => fillGap(a.id, gap.start, gap.end)} aria-label={`${a.name}(으)로 ${fmtDur(gap.end - gap.start)} 채우기`}>
               {a.name}
             </button>
           ))}
+        <button className="chip" style={{ background: 'var(--bg)' }} onClick={() => setSplitting(true)}>
+          ✂ 나눠서
+        </button>
       </div>
     </div>
   );
+}
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const hmOf = (ms: number) => `${pad2(new Date(ms).getHours())}:${pad2(new Date(ms).getMinutes())}`;
+/** "HH:MM"을 [lo, hi] 안의 ms로(자정을 넘는 빈칸도) */
+function msOf(hm: string, lo: number, hi: number): number | null {
+  const m = /^(\d{2}):(\d{2})$/.exec(hm);
+  if (!m) return null;
+  const base = new Date(lo);
+  let t = new Date(base.getFullYear(), base.getMonth(), base.getDate(), Number(m[1]), Number(m[2])).getTime();
+  if (t < lo) t += DAY;
+  return t > hi ? null : t;
+}
+
+/**
+ * 빈 시간을 여러 조각으로 나눠 채우기. 조각마다 활동을 고르고(안 고르면 비워 둠),
+ * 경계 시각을 바꾸면 다음 조각의 시작도 같이 바뀐다.
+ */
+function GapSplitSheet({ start, end, onClose }: { start: number; end: number; onClose: () => void }) {
+  const activities = useStore((s) => s.activities);
+  const fillGaps = useStore((s) => s.fillGaps);
+  const [cuts, setCuts] = useState<number[]>(() => [snap(start + (end - start) / 2, start, end)]);
+  const [acts, setActs] = useState<(string | null)[]>([null, null]);
+  const bounds = [start, ...cuts, end];
+  const parts = bounds.slice(0, -1).map((s, i) => ({ start: s, end: bounds[i + 1], act: acts[i] ?? null }));
+  const color = (id: string | null) => activities.find((a) => a.id === id)?.color;
+  const tops = activities.filter((a) => a.id !== SLEEP_ID && !a.parentId);
+
+  const split = () => {
+    // 가장 긴 조각을 반으로
+    let k = 0;
+    parts.forEach((p, i) => {
+      if (p.end - p.start > parts[k].end - parts[k].start) k = i;
+    });
+    const p = parts[k];
+    if (p.end - p.start < 20 * 60_000) return;
+    const mid = snap(p.start + (p.end - p.start) / 2, p.start, p.end);
+    setCuts([...cuts.slice(0, k), mid, ...cuts.slice(k)].sort((a, b) => a - b));
+    setActs([...acts.slice(0, k + 1), null, ...acts.slice(k + 1)]);
+  };
+  const merge = (i: number) => {
+    // i번째 조각을 앞 조각에 합친다(첫 조각이면 뒤와)
+    const cut = i === 0 ? 0 : i - 1;
+    setCuts(cuts.filter((_, j) => j !== cut));
+    setActs(acts.filter((_, j) => j !== i));
+  };
+  const moveCut = (j: number, v: string) => {
+    const t = msOf(v, start, end);
+    if (t === null) return;
+    const lo = (j === 0 ? start : cuts[j - 1]) + 10 * 60_000;
+    const hi = (j === cuts.length - 1 ? end : cuts[j + 1]) - 10 * 60_000;
+    setCuts(cuts.map((c, k) => (k === j ? Math.min(Math.max(t, lo), hi) : c)));
+  };
+  const filled = parts.filter((p) => p.act);
+
+  return (
+    <div className="sheet-back" onPointerDown={onClose}>
+      <div className="sheet" role="dialog" aria-modal="true" aria-label="빈 시간 나눠 채우기" onPointerDown={(e) => e.stopPropagation()}>
+        <div className="row between">
+          <div className="jua" style={{ fontSize: 20 }}>
+            {fmtHM(start)}–{fmtHM(end)} 나눠 채우기
+          </div>
+          <button className="pill" style={{ background: 'var(--bg)' }} onClick={onClose}>
+            닫기
+          </button>
+        </div>
+        <div className="gap-bar" aria-hidden="true">
+          {parts.map((p, i) => (
+            <i key={i} style={{ flex: p.end - p.start, background: color(p.act) ?? 'var(--bg)' }} />
+          ))}
+        </div>
+        {parts.map((p, i) => (
+          <div key={i} className="gap-part">
+            <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+              <span className="jua" style={{ fontSize: 15 }}>
+                {fmtHM(p.start)}
+              </span>
+              <span>–</span>
+              {i < parts.length - 1 ? (
+                // 글자는 우리가 그리고 투명한 시간 입력을 덮는다(기기마다 오전/오후 표시가 잘리지 않게)
+                <label className="gap-time">
+                  <span className="jua">{fmtHM(p.end)}</span>
+                  <span aria-hidden="true">✎</span>
+                  <input type="time" step={600} aria-label={`${i + 1}번째 조각 끝`} value={hmOf(p.end)} onChange={(e) => moveCut(i, e.target.value)} />
+                </label>
+              ) : (
+                <span className="jua" style={{ fontSize: 15 }}>
+                  {fmtHM(p.end)}
+                </span>
+              )}
+              <span className="sub grow" style={{ fontSize: 12 }}>
+                {fmtDur(p.end - p.start)}
+              </span>
+              {parts.length > 1 && (
+                <button className="step-x" aria-label={`${i + 1}번째 조각 합치기`} onClick={() => merge(i)}>
+                  ×
+                </button>
+              )}
+            </div>
+            <div className="chips wrap">
+              {tops.map((a) => (
+                <button
+                  key={a.id}
+                  className="chip small"
+                  style={{ background: a.color }}
+                  aria-pressed={p.act === a.id}
+                  onClick={() => setActs(parts.map((q, k) => (k === i ? (q.act === a.id ? null : a.id) : q.act)))}
+                >
+                  {a.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+        <button className="pill" style={{ background: 'var(--bg)', alignSelf: 'flex-start' }} onClick={split}>
+          ✂ 한 번 더 나누기
+        </button>
+        <button
+          className="big-btn ink"
+          disabled={!filled.length}
+          onClick={() => {
+            fillGaps(filled.map((p) => ({ activityId: p.act!, start: p.start, end: p.end })));
+            onClose();
+          }}
+        >
+          {filled.length ? `${filled.length}조각 채우기` : '조각마다 활동을 골라 줘'}
+        </button>
+        <div className="hint">안 고른 조각은 비워 둬. 나중에 다시 물어볼게.</div>
+      </div>
+    </div>
+  );
+}
+
+/** 10분 단위로 맞추고 양 끝에서 10분은 남긴다 */
+function snap(t: number, lo: number, hi: number): number {
+  const s = Math.round(t / 600_000) * 600_000;
+  return Math.min(Math.max(s, lo + 600_000), hi - 600_000);
 }
 
 /** 오늘까지인 할 일을 세 개까지만. 눈앞에 있어야 잊지 않는다. */

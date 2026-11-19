@@ -1003,11 +1003,13 @@ export function Todos({ now: clock }: { now: number }) {
           + 추가
         </button>
       </div>
-      <button className="wk-open" onClick={() => setPlanning(true)}>
-        <b>한 주 짜기</b>
-        <span>할 일을 길게 적으면 빈 시간에 나눠 줄게</span>
-      </button>
-      <PeriodBar today={today} />
+      <div className="plan-tools">
+        <button className="wk-open" onClick={() => setPlanning(true)}>
+          <b>✨ 한 주 짜기</b>
+          <span>길게 적으면 나눠 줄게</span>
+        </button>
+        <PeriodBar today={today} />
+      </div>
       {view === 'list' ? <ListView today={today} clock={clock} /> : <CalendarView today={today} clock={clock} />}
       {adding && <AddSheet today={today} clock={clock} onClose={() => setAdding(false)} />}
       {planning && <WeekPlanSheet onClose={() => setPlanning(false)} />}

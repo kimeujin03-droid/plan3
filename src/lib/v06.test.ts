@@ -195,3 +195,25 @@ describe('시험 기간', () => {
     expect(s.todos.length).toBe(n0);
   });
 });
+
+describe('분류 안 되는 말은 한마디로', () => {
+  it('활동으로 못 나누는 말은 지금 칸의 한마디가 되고, 빈 시간은 나눠 채울 수 있다', async () => {
+    const { useStore, emptyData } = await import('../store');
+    useStore.setState({ ...emptyData(), ai: false, undoData: null, lastReply: null });
+    const st = useStore.getState();
+    st.say('오늘 하늘이 진짜 예쁘다');
+    const s = useStore.getState();
+    expect(s.memories).toHaveLength(1);
+    expect(s.memories[0].text).toBe('오늘 하늘이 진짜 예쁘다');
+    expect(s.memories[0].end - s.memories[0].start).toBe(10 * 60_000);
+    const t0 = Date.now() - 5 * 3600_000;
+    s.fillGaps([
+      { activityId: 'move', start: t0, end: t0 + 3600_000 },
+      { activityId: 'study', start: t0 + 3600_000, end: t0 + 2 * 3600_000 },
+    ]);
+    const ex = useStore.getState().intervals.filter((iv) => iv.kind === 'exec');
+    expect(ex.map((iv) => iv.activityId)).toEqual(['move', 'study']);
+    useStore.getState().undo();
+    expect(useStore.getState().intervals.filter((iv) => iv.kind === 'exec')).toHaveLength(0);
+  });
+});

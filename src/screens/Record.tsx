@@ -49,7 +49,18 @@ export function Record({ now }: { now: number }) {
   const [erasing, setErasing] = useState(false);
   /** 지우개로 지울 활동('' = 전부). 겹친 일정 중 하나만 지우고 싶을 때 */
   const [eraseTarget, setEraseTarget] = useState('');
+  // 쓰는 법 안내는 처음 몇 번만: 익숙해지면 격자를 한 줄이라도 더 보이게
+  const [showHint] = useState(() => {
+    try {
+      const n = Number(localStorage.getItem('moa-record-hint') ?? '0');
+      localStorage.setItem('moa-record-hint', String(n + 1));
+      return n < 8;
+    } catch {
+      return true;
+    }
+  });
   const intervals = useStore((s) => s.intervals);
+  const memories = useStore((s) => s.memories);
   const [actId, setActId] = useState(activities[0].id);
   // 한마디: 먼저 누른 칸
   const [anchor, setAnchor] = useState<number | null>(null);
@@ -121,10 +132,11 @@ export function Record({ now }: { now: number }) {
               />
             )}
             {!erasing && !say && <CategoryChips value={selected} onChange={setActId} />}
+            {(say || showHint) && (
             <div className="hint">
               {say ? (
                 anchor === null ? (
-                  '이 시간 어떻게 보냈어? 시작 칸 톡, 끝 칸 톡 (옆으로 문질러도 돼)'
+                  '시작 칸 톡, 끝 칸 톡 · 있는 한마디를 톡 하면 고치기'
                 ) : (
                   <>
                     {fmtHM(day + anchor * CELL)}부터… 이제 끝 칸을 톡
@@ -137,6 +149,7 @@ export function Record({ now }: { now: number }) {
                 '옆으로 문지르면 칠해져 · 꾸욱 누르면 한마디'
               )}
             </div>
+            )}
           </>
         )}
       </div>
@@ -152,7 +165,10 @@ export function Record({ now }: { now: number }) {
             select={say}
             anchor={anchor}
             onTapCell={(i) => {
-              if (anchor === null) setAnchor(i);
+              // 한마디가 있는 칸을 톡: 그 한마디 고치기
+              const hit = anchor === null ? memories.find((m) => m.start < day + (i + 1) * CELL && m.end > day + i * CELL) : undefined;
+              if (hit) setOpen({ from: Math.max(0, Math.floor((hit.start - day) / CELL)), to: Math.min(143, Math.ceil((hit.end - day) / CELL) - 1), memory: hit });
+              else if (anchor === null) setAnchor(i);
               else {
                 setOpen({ from: Math.min(anchor, i), to: Math.max(anchor, i), memory: null });
                 setAnchor(null);
