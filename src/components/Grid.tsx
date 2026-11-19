@@ -116,6 +116,7 @@ export function Grid({ day, kind, erasing, activityId, now, onMemo, select = fal
   const intervals = useStore((s) => s.intervals);
   const activities = useStore((s) => s.activities);
   const memories = useStore((s) => s.memories);
+  const todos = useStore((s) => s.todos);
   const paintRange = useStore((s) => s.paintRange);
   const beginStroke = useStore((s) => s.beginStroke);
   const drag = useRef({ down: false, on: false, memo: false, last: -1, x: 0, y: 0, first: -1 });
@@ -127,9 +128,19 @@ export function Grid({ day, kind, erasing, activityId, now, onMemo, select = fal
   const minute = Math.floor(now / 60_000);
 
   const cells = useMemo(() => {
-    const byId = new Map(activities.map((a) => [a.id, a]));
-    const dayIv = intervals.filter((iv) => iv.start < day + DAY && (iv.end === null ? now : iv.end) > day);
+    // 활동을 안 정한 시간 계획(캘린더에서 불러온 약속 등)도 계획 칸에 이름과 함께 연한 회색으로 보인다.
+    const loose = todos.filter((t) => !t.done && !t.activityId && t.start !== undefined && t.end !== undefined && t.start < day + DAY && t.end > day);
+    const byId = new Map<string, { name: string; color: string }>([
+      ...activities.map((a) => [a.id, a] as [string, { name: string; color: string }]),
+      ...loose.map((t) => [`todo:${t.id}`, { name: t.text, color: '#B9B3D6' }] as [string, { name: string; color: string }]),
+    ]);
+    const dayIv = [
+      ...intervals.filter((iv) => iv.start < day + DAY && (iv.end === null ? now : iv.end) > day),
+      ...loose.map((t) => ({ id: `todo-${t.id}`, activityId: `todo:${t.id}`, kind: 'plan' as const, start: t.start!, end: t.end!, source: 'paint' as const })),
+    ];
     const infos = Array.from({ length: 144 }, (_, i) => cellInfo(dayIv, day + i * CELL, now));
+    const plansToday = todos.filter((t) => !t.done && t.activityId && t.start !== undefined && t.end !== undefined && t.start < day + DAY && t.end > day);
+    const named = (at: number) => plansToday.find((t) => t.start! <= at + CELL / 2 && t.end! > at + CELL / 2)?.text;
     const none = { plan: null as string | null, exec: [] as string[] };
     return infos.map((c, i) => {
       // 줄이 바뀌면 이어 그리지 않는다.
@@ -154,13 +165,15 @@ export function Grid({ day, kind, erasing, activityId, now, onMemo, select = fal
         e2R: radius(f2[0] === 0 && p.exec[1] === e2, f2[1] === 1 && n.exec[1] === e2),
         two: !!e2,
         label: e1 && p.exec[0] !== e1 ? byId.get(e1)?.name ?? '' : '',
-        planLabel: !e1 && c.plan && p.plan !== c.plan ? byId.get(c.plan)?.name ?? '' : '',
+        // 계획 이름: 그 시간의 계획(루틴·할 일) 이름이 있으면 그것(예: '수치계산 2'), 없으면 활동 이름
+        planLabel:
+          !e1 && c.plan && (p.plan !== c.plan || named(cs) !== named(cs - CELL)) ? named(cs) ?? byId.get(c.plan)?.name ?? '' : '',
         label2: e2 && p.exec[1] !== e2 ? byId.get(e2)?.name ?? '' : '',
       };
     });
     // 분 단위로만 다시 계산한다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [intervals, activities, day, minute]);
+  }, [intervals, activities, todos, day, minute]);
 
   const dayMemos = useMemo(() => memories.filter((m) => m.start < day + DAY && m.end > day), [memories, day]);
   const boxes = useMemo(() => {

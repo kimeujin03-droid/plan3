@@ -532,7 +532,7 @@ function EditSheet({ todo, onClose }: { todo: Todo; onClose: () => void }) {
               <PickerButton label="끝" value={to ? fmtAmPm(toMs(day, to)) : '없음'} type="time" onChange={(v) => v && setTo(v)} />
             </div>
             {bad && <div className="hint" style={{ color: '#8a2444' }}>끝 시각이 시작보다 뒤여야 해.</div>}
-            {todo.seriesId && <div className="hint">매주 반복 중 이날만 바뀌어. 매주 다 바꾸려면 아래 '반복' 목록에서 고쳐 줘.</div>}
+            {todo.seriesId && <div className="hint">루틴 중 이날만 바뀌어. 매주 다 바꾸려면 계획 탭 위 '🔁 루틴'에서 고쳐 줘.</div>}
           </>
         )}
         {!isRange && todo.type !== 'hours' && (
@@ -580,29 +580,38 @@ function EditSheet({ todo, onClose }: { todo: Todo; onClose: () => void }) {
   );
 }
 
-/** 매주 고정 일정 고치기: 이름·요일·시각·끝나는 날·장소. 앞으로의 날들이 새 모양으로 바뀐다. */
-function SeriesSheet({ series, onClose }: { series: Series; onClose: () => void }) {
+/** 루틴 만들기·고치기: 이름·활동·요일·시각·끝나는 날·장소. 고치면 앞으로의 날들이 새 모양으로 바뀐다. */
+function SeriesSheet({ series, onClose }: { series?: Series; onClose: () => void }) {
   const update = useStore((s) => s.updateSeries);
-  const [text, setText] = useState(series.text);
-  const [days, setDays] = useState(series.days);
-  const [from, setFrom] = useState(hmOfMin(series.startMin));
-  const [to, setTo] = useState(series.endMin !== null ? hmOfMin(series.endMin) : '');
-  const [until, setUntil] = useState<number | null>(series.until ?? null);
-  const [place, setPlace] = useState(series.place ?? '');
+  const add = useStore((s) => s.addSeries);
+  const remove = useStore((s) => s.removeSeries);
+  const [text, setText] = useState(series?.text ?? '');
+  const [act, setAct] = useState(series?.activityId ?? '');
+  const [days, setDays] = useState(series?.days ?? []);
+  const [from, setFrom] = useState(series ? hmOfMin(series.startMin) : '09:00');
+  const [to, setTo] = useState(series ? (series.endMin !== null ? hmOfMin(series.endMin) : '') : '10:00');
+  const [until, setUntil] = useState<number | null>(series?.until ?? null);
+  const [place, setPlace] = useState(series?.place ?? '');
   const today = dayStart(Date.now());
   const bad = (to !== '' && to <= from) || !days.length;
+  const save = () => {
+    const v = { text, days, startMin: minOfHM(from), endMin: to ? minOfHM(to) : null, place: place.trim() || undefined, until: until ?? undefined, activityId: act || null };
+    if (series) update(series.id, v);
+    else add({ ...v, text: text.trim() });
+    onClose();
+  };
   return (
     <div className="sheet-back" onPointerDown={onClose}>
-      <div className="sheet" role="dialog" aria-modal="true" aria-label="반복 고치기" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="sheet" role="dialog" aria-modal="true" aria-label={series ? '루틴 고치기' : '새 루틴'} onPointerDown={(e) => e.stopPropagation()}>
         <div className="row between">
           <div className="jua" style={{ fontSize: 20 }}>
-            매주 반복 고치기
+            {series ? '루틴 고치기' : '새 루틴'}
           </div>
           <button className="pill" style={{ background: 'var(--bg)' }} onClick={onClose}>
             닫기
           </button>
         </div>
-        <input className="field" aria-label="이름" maxLength={80} value={text} onChange={(e) => setText(e.target.value)} />
+        <input className="field" aria-label="이름" maxLength={80} placeholder="예: 기초미적분학" value={text} onChange={(e) => setText(e.target.value)} />
         <div className="repeat-row" role="group" aria-label="반복할 요일">
           <span className="sub" style={{ fontSize: 12 }}>
             요일
@@ -618,6 +627,7 @@ function SeriesSheet({ series, onClose }: { series: Series; onClose: () => void 
           <span aria-hidden="true">→</span>
           <PickerButton label="끝" value={to ? fmtAmPm(toMs(today, to)) : '없음'} type="time" onChange={(v) => v && setTo(v)} />
         </div>
+        <CategoryChips value={act} onChange={setAct} />
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           <button type="button" className="chip" style={{ background: 'var(--bg)' }} aria-pressed={until === null} onClick={() => setUntil(null)}>
             끝없이
@@ -626,16 +636,112 @@ function SeriesSheet({ series, onClose }: { series: Series; onClose: () => void 
         </div>
         <PlaceInput value={place} onChange={setPlace} />
         {bad && <div className="hint" style={{ color: '#8a2444' }}>{days.length ? '끝 시각이 시작보다 뒤여야 해.' : '요일을 하나는 골라 줘.'}</div>}
-        <button
-          className="big-btn ink"
-          disabled={bad || !text.trim()}
-          onClick={() => {
-            update(series.id, { text, days, startMin: minOfHM(from), endMin: to ? minOfHM(to) : null, place: place.trim() || undefined, until: until ?? undefined });
-            onClose();
-          }}
-        >
-          고치기
+        <div className="row" style={{ gap: 8 }}>
+          {series && (
+            <button
+              className="pill"
+              style={{ background: 'var(--bg)', minHeight: 52, padding: '0 16px' }}
+              onClick={() => {
+                remove(series.id);
+                onClose();
+              }}
+            >
+              지우기
+            </button>
+          )}
+          <button className="big-btn ink grow" disabled={bad || !text.trim()} onClick={save}>
+            {series ? '고치기' : '만들기'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const ROUTINE_ROW = 26;
+
+/**
+ * 루틴 관리: 매주 고정 일정을 한 주 시간표로 한눈에 보고, 누르면 고친다.
+ * 아래 목록은 한 줄씩(색·이름·요일·시각·장소).
+ */
+function RoutineSheet({ onClose }: { onClose: () => void }) {
+  const series = useStore((s) => s.series);
+  const activities = useStore((s) => s.activities);
+  const [edit, setEdit] = useState<Series | 'new' | null>(null);
+  const color = (id: string | null) => activities.find((a) => a.id === id)?.color ?? '#B9B3D6';
+  const order = [1, 2, 3, 4, 5, 6, 0];
+  const used = order.filter((d) => d < 6 && d > 0 || series.some((x) => x.days.includes(d)));
+  const h0 = Math.min(9, ...series.map((x) => Math.floor(x.startMin / 60)));
+  const h1 = Math.max(18, ...series.map((x) => Math.ceil((x.endMin ?? x.startMin + 60) / 60)));
+  const sorted = [...series].sort((a, b) => order.indexOf(a.days[0] ?? 0) - order.indexOf(b.days[0] ?? 0) || a.startMin - b.startMin);
+  const hm = (m: number) => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  const md = (d: number) => `${new Date(d).getMonth() + 1}/${new Date(d).getDate()}`;
+  return (
+    <div className="sheet-back" onPointerDown={onClose}>
+      <div className="sheet range-sheet routine-sheet" role="dialog" aria-modal="true" aria-label="루틴" onPointerDown={(e) => e.stopPropagation()}>
+        <div className="row between">
+          <div className="jua" style={{ fontSize: 20 }}>
+            루틴 <span className="sub" style={{ fontSize: 14 }}>매주 고정 {series.length}개</span>
+          </div>
+          <button className="pill" style={{ background: 'var(--bg)' }} onClick={onClose}>
+            닫기
+          </button>
+        </div>
+        {series.length === 0 ? (
+          <div className="empty">수업·알바처럼 매주 같은 시간에 하는 일을 넣어 두면, 2주치가 달력과 기록 격자에 미리 칠해져.</div>
+        ) : (
+          <div className="rt-table" style={{ gridTemplateColumns: `22px repeat(${used.length}, minmax(0, 1fr))` }}>
+            <span />
+            {used.map((d) => (
+              <span key={d} className="rt-dow">
+                {'일월화수목금토'[d]}
+              </span>
+            ))}
+            <div className="rt-hours" style={{ height: (h1 - h0) * ROUTINE_ROW }}>
+              {Array.from({ length: h1 - h0 }, (_, k) => (
+                <span key={k} style={{ top: k * ROUTINE_ROW }}>
+                  {h0 + k}
+                </span>
+              ))}
+            </div>
+            {used.map((d) => (
+              <div key={d} className="rt-col" style={{ height: (h1 - h0) * ROUTINE_ROW }}>
+                {series
+                  .filter((x) => x.days.includes(d))
+                  .map((x) => {
+                    const top = ((x.startMin - h0 * 60) / 60) * ROUTINE_ROW;
+                    const h = (((x.endMin ?? x.startMin + 60) - x.startMin) / 60) * ROUTINE_ROW;
+                    return (
+                      <button key={x.id} className="rt-block" style={{ top, height: Math.max(14, h), background: color(x.activityId) }} aria-label={`${x.text} 고치기`} onClick={() => setEdit(x)}>
+                        {x.text}
+                      </button>
+                    );
+                  })}
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="rt-list">
+          {sorted.map((x) => (
+            <button key={x.id} className="rt-row" onClick={() => setEdit(x)} aria-label={`${x.text} 고치기`}>
+              <i style={{ background: color(x.activityId) }} />
+              <b>{x.text}</b>
+              <span>
+                {order.filter((d) => x.days.includes(d)).map((d) => '일월화수목금토'[d]).join('')} {hm(x.startMin)}
+                {x.endMin !== null ? `–${hm(x.endMin)}` : ''}
+              </span>
+              <em>
+                {x.place ?? ''}
+                {x.until !== undefined ? ` ~${md(x.until)}` : ''}
+              </em>
+            </button>
+          ))}
+        </div>
+        <button className="big-btn ink" onClick={() => setEdit('new')}>
+          + 새 루틴
         </button>
+        <div className="hint">시간표 사진이나 캘린더 파일은 '한 주 짜기'에서 한 번에 넣을 수 있어.</div>
+        {edit && <SeriesSheet series={edit === 'new' ? undefined : edit} onClose={() => setEdit(null)} />}
       </div>
     </div>
   );
@@ -657,9 +763,6 @@ function ListView({ today, clock }: { today: number; clock: number }) {
   const todos = useStore((s) => s.todos);
   const [showDone, setShowDone] = useState(false);
   const goals = todos.filter((t) => t.type === 'hours');
-  const series = useStore((s) => s.series);
-  const removeSeries = useStore((s) => s.removeSeries);
-  const [editSeries, setEditSeries] = useState<Series | null>(null);
   // 반복 일정은 오늘·내일 것만 목록에 둔다(나머지는 달력에서).
   const open = todos.filter((t) => !t.done && t.type !== 'hours' && !(t.seriesId && t.due !== null && t.due > today + DAY)).sort(byUrgency(today, clock));
   const done = todos.filter((t) => t.done && t.type !== 'hours').sort((a, b) => (b.doneAt ?? 0) - (a.doneAt ?? 0));
@@ -672,29 +775,6 @@ function ListView({ today, clock }: { today: number; clock: number }) {
       <Group title="오늘" todos={open.filter((t) => t.due === today && level(t) !== 'urgent' && level(t) !== 'late')} today={today} clock={clock} />
       <Group title="다가오는" todos={open.filter((t) => t.due !== null && t.due > today && level(t) !== 'urgent' && level(t) !== 'late')} today={today} clock={clock} />
       <Group title="기한 없음" todos={open.filter((t) => t.due === null)} today={today} clock={clock} />
-      {series.length > 0 && (
-        <div className="card" style={{ gap: 6, padding: '14px 12px 10px 16px' }}>
-          <div className="sub" style={{ fontSize: 13 }}>
-            반복 · 2주치가 달력과 격자에 미리 들어가 있어
-          </div>
-          {series.map((x) => (
-            <div key={x.id} className="row" style={{ gap: 8, minHeight: 44 }}>
-              <div className="grow">
-                <div style={{ fontSize: 15 }}>{x.text}</div>
-                <div className="todo-meta">
-                  <span>{describeSeries(x)}</span>
-                  {x.place && <span className="place">{x.place}</span>}
-                </div>
-              </div>
-              <button className="pill" style={{ background: 'var(--bg)', minHeight: 36 }} aria-label={`${x.text} 반복 고치기`} onClick={() => setEditSeries(x)}>
-                고치기
-              </button>
-              <RemoveButton onClick={() => removeSeries(x.id)} />
-            </div>
-          ))}
-          {editSeries && <SeriesSheet series={editSeries} onClose={() => setEditSeries(null)} />}
-        </div>
-      )}
       {done.length > 0 && (
         <button className="pill clear" style={{ alignSelf: 'flex-start' }} aria-expanded={showDone} onClick={() => setShowDone(!showDone)}>
           끝낸 것 {done.length}개 {showDone ? '접기' : '보기'}
@@ -1003,6 +1083,8 @@ export function Todos({ now: clock }: { now: number }) {
   const [view, setView] = useState<'list' | 'cal'>('list');
   const [adding, setAdding] = useState(false);
   const [planning, setPlanning] = useState(false);
+  const [routines, setRoutines] = useState(false);
+  const seriesCount = useStore((s) => s.series.length);
   return (
     <div className="screen">
       <div className="row" style={{ gap: 8 }}>
@@ -1021,10 +1103,15 @@ export function Todos({ now: clock }: { now: number }) {
       <div className="plan-tools">
         <button className="wk-open" onClick={() => setPlanning(true)}>
           <b>✨ 한 주 짜기</b>
-          <span>길게 적으면 나눠 줄게</span>
+          <span>나눠 넣기</span>
+        </button>
+        <button className="wk-open rt-open" onClick={() => setRoutines(true)}>
+          <b>🔁 루틴</b>
+          <span>{seriesCount ? `${seriesCount}개` : '매주 고정'}</span>
         </button>
         <PeriodBar today={today} />
       </div>
+      {routines && <RoutineSheet onClose={() => setRoutines(false)} />}
       {view === 'list' ? <ListView today={today} clock={clock} /> : <CalendarView today={today} clock={clock} />}
       {adding && <AddSheet today={today} clock={clock} onClose={() => setAdding(false)} />}
       {planning && <WeekPlanSheet onClose={() => setPlanning(false)} />}

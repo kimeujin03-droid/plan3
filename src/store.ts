@@ -6,7 +6,7 @@ import { activeIntervals, mergeAdd, paintCell, subtract } from './lib/intervals'
 import { rescheduleNudge, scheduleTimerAlert } from './lib/notify';
 import { moaStorage } from './lib/storage';
 import { childColor, DEFAULT_ACTIVITIES, EXTRA_COLORS, SLEEP_ID } from './lib/palette';
-import { mentionsTime, parse, type Command } from './lib/parser';
+import { matchActivity, mentionsTime, parse, type Command } from './lib/parser';
 
 /** 진행률(0~100). 예전 10칸 값도 읽는다. 진행률을 쓰지 않는 할 일이면 undefined. */
 export function percentOf(t: Todo): number | undefined {
@@ -67,6 +67,11 @@ import type { Activity, Data, EraseMode, Focus, Look, Memory, PaintMode, Period,
 
 /** 매주 고정 일정을 쉬는 구간 */
 const pausesOf = (d: { periods?: Period[] }) => (d.periods ?? []).filter((p) => p.pause);
+
+/** 루틴(매주 고정)의 활동 짐작: 이름에 활동 이름이 들어 있으면 그것, 아니면 '수업'(시간표가 대부분이라서) */
+function guessActivity(text: string, activities: Activity[]): string | null {
+  return matchActivity(text, activities)?.id ?? activities.find((a) => a.name === '수업')?.id ?? null;
+}
 import { LIFE_ACTIVITIES, LIFE_ID } from './lib/palette';
 
 /** 한 번에 넣을 계획 하나 */
@@ -587,7 +592,7 @@ export const useStore = create<Store>()(
             series = series.map((o) => (o === same ? { ...o, from: o.from ?? x.from, until: o.until ?? x.until } : o));
             continue;
           }
-          const one: Series = { ...x, days: [...x.days].sort(), id: uid('series'), skip: [], createdAt: now };
+          const one: Series = { ...x, activityId: x.activityId ?? guessActivity(x.text, s.activities), days: [...x.days].sort(), id: uid('series'), skip: [], createdAt: now };
           series = [...series, one];
           made.push(one);
         }
@@ -952,9 +957,28 @@ export const useStore = create<Store>()(
       },
 
       ensureSeries: () => {
-        const cur = get();
+        let cur = get();
         if (!cur.series.length) return;
         const now = Date.now();
+        // 활동 없이 만든 루틴은 활동을 짐작해 붙이고, 앞으로의 날들을 격자에 미리 칠한다.
+        if (cur.series.some((s) => !s.activityId)) {
+          let todos = cur.todos;
+          let intervals = cur.intervals;
+          const series = cur.series.map((s) => {
+            if (s.activityId) return s;
+            const act = guessActivity(s.text, cur.activities);
+            if (!act) return s;
+            todos = todos.map((t) => (t.seriesId === s.id && !t.done ? { ...t, activityId: act } : t));
+            for (const t of todos) {
+              if (t.seriesId !== s.id || t.done || t.start === undefined || t.end === undefined || t.end <= now) continue;
+              intervals = subtract(intervals, Math.max(t.start, now), t.end, (iv) => iv.kind === 'plan', now);
+              intervals = mergeAdd(intervals, { activityId: act, kind: 'plan', start: Math.max(t.start, now), end: t.end, source: 'paint' });
+            }
+            return { ...s, activityId: act };
+          });
+          set({ series, todos, intervals });
+          cur = get();
+        }
         const out = materializeSeries(cur.series, cur.todos, cur.intervals, logicalToday(now, cur.intervals), now, () => uid('todo'), undefined, pausesOf(cur));
         if (out.todos !== cur.todos) set({ todos: out.todos, intervals: out.intervals });
       },
