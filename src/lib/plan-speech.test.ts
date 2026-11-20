@@ -172,3 +172,17 @@ describe('양을 정한 앞으로의 말은 오늘 계획', () => {
     expect(parse('공부 시작', acts, now, today)[0].type).toBe('start');
   });
 });
+
+describe('이어진 두 일은 나눠서', () => {
+  const now = new Date(2026, 10, 20, 19, 0).getTime();
+  const today = new Date(2026, 10, 20).getTime();
+  const tomorrow = new Date(2026, 10, 21).getTime();
+  const at = (h: number, m = 0) => tomorrow + (h * 60 + m) * 60_000;
+  it('과외는 내일 11~14시(온라인), 이동은 내일 10시 반까지', () => {
+    const cmds = parse('내일 11시부터 2시까지 민아과외 온라인으로 하고 그러려고 10시반까지 이동', DEFAULT_ACTIVITIES, now, today);
+    expect(cmds).toEqual([
+      { type: 'todo', text: '민아과외', due: tomorrow, start: at(11), end: at(14), activityId: null, place: '온라인' },
+      expect.objectContaining({ type: 'todo', text: '이동', due: tomorrow, deadline: true, dueAt: at(10, 30) }),
+    ]);
+  });
+});

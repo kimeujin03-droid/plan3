@@ -128,10 +128,23 @@ function verbToNoun(s: string): string {
   return s;
 }
 
+/** 두 일을 잇는 말: "하고 그러려고", "그리고", "그 다음에", "그 전에", "그래서" */
+export const JOIN = /\s+(?:하고\s+)?(?:그러려고|그러니까|그래서|그리고|그\s*다음에?|그\s*전에)\s+/;
+
+/** "온라인으로 하고" → 장소 '온라인' */
+function onlinePlace(c: Command): Command {
+  if (c.type !== 'todo') return c;
+  const m = c.text.match(/\s*(온라인|비대면|화상|줌|zoom)\s*(으로|로)?(\s*(하고|할|해))?/i);
+  if (!m) return c;
+  const text = c.text.replace(m[0], ' ').replace(/\s+/g, ' ').trim();
+  return text ? { ...c, text, place: c.place ?? m[1] } : c;
+}
+
 function planText(s: string): string {
   let out = s
     .trim()
     .replace(/[.!~…?]+$/g, '')
+    .replace(/\s*하고$/, '')
     .replace(/\s+/g, ' ')
     .replace(/\s*(을|를)?\s*(해\s*볼까|해\s*볼게|해\s*보려고|해\s*볼래|하려고|할까|할까봐)$/, '');
   out = verbToNoun(out)
@@ -265,11 +278,20 @@ export function parse(text: string, activities: Activity[], now: number, today: 
   const fatigue = t.match(/피로도?\s*(\d{1,3})/);
   if (fatigue) return [{ type: 'fatigue', value: Math.min(100, Number(fatigue[1])) }];
 
+  // "A 하고 그러려고 B", "A 그리고 B": 이어진 두 일은 나눠서 읽는다. 앞에서 말한 날(내일 등)은 뒤에도 이어 준다.
+  const parts = t.split(JOIN).map((x) => x.trim()).filter(Boolean);
+  if (parts.length > 1) {
+    const day = t.match(DAYWORD)?.[0];
+    const out = parts.flatMap((p, i) => parse(i > 0 && day && !DAYWORD.test(p) ? `${day} ${p}` : p, activities, now, today));
+    const real = out.filter((c) => c.type !== 'memo');
+    if (real.length) return real;
+  }
+
   const repeat = parseRepeat(t, activities);
   if (repeat) return [repeat];
 
   const plan = parsePlan(t, activities, today);
-  if (plan) return [plan];
+  if (plan) return [onlinePlace(plan)];
 
   if (/(잘게|자러|잔다|잘래)/.test(t)) return [{ type: 'sleep' }];
   if (/(일어났|일어남|기상)/.test(t)) return [{ type: 'wake' }];

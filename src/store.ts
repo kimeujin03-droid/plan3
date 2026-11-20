@@ -6,7 +6,7 @@ import { activeIntervals, mergeAdd, paintCell, subtract } from './lib/intervals'
 import { rescheduleNudge, scheduleTimerAlert } from './lib/notify';
 import { moaStorage } from './lib/storage';
 import { childColor, DEFAULT_ACTIVITIES, EXTRA_COLORS, SLEEP_ID } from './lib/palette';
-import { matchActivity, mentionsTime, parse, type Command } from './lib/parser';
+import { JOIN, matchActivity, mentionsTime, parse, type Command } from './lib/parser';
 
 /** 진행률(0~100). 예전 10칸 값도 읽는다. 진행률을 쓰지 않는 할 일이면 undefined. */
 export function percentOf(t: Todo): number | undefined {
@@ -56,6 +56,8 @@ const CORRECT = /^(아니\s*아니|아니야|아니라|아냐|아니|그게\s*�
 function needsAi(cmds: Command[], text: string): boolean {
   // "화요일 시험 있어서 오늘 3시간 하자"처럼 까닭과 날짜가 둘 이상 섞인 말은 규칙이 헷갈린다.
   if (/(있어서|이라서|라서|때문에|니까)/.test(text) && cmds.some((c) => c.type === 'todo')) return true;
+  // 두 일을 이어 말하면("하고 그러려고", "그리고") 규칙이 나눈 결과를 AI가 한 번 더 본다
+  if (JOIN.test(text)) return true;
   return cmds.some((c) => {
     if (c.type === 'memo') return true;
     if (c.type === 'todo') return /(어|야|여|지|까|네|요|음|다|게|래|고|데|나|자|듯)$/.test(c.text) || c.text.length > 16;
