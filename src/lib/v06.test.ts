@@ -287,3 +287,25 @@ describe('말 고치기(답장·"아니")', () => {
     expect(useStore.getState().memories).toHaveLength(1);
   });
 });
+
+describe('내일로 미루기', () => {
+  it('오늘 할 일은 내일로, 시각도 같이 옮기고 되돌릴 수 있다', async () => {
+    const { useStore, emptyData } = await import('../store');
+    const { logicalToday } = await import('./day');
+    useStore.setState({ ...emptyData(), undoData: null, lastReply: null });
+    const now = Date.now();
+    const today = logicalToday(now, []);
+    const st = useStore.getState();
+    st.addTodo('면담', today, { type: 'range', start: today + 20 * 3600_000, end: today + 21 * 3600_000 });
+    st.addTodo('납땜 기기 사기', today - 86400_000);
+    const [a, b] = useStore.getState().todos;
+    st.postponeTodo(a.id);
+    st.postponeTodo(b.id);
+    const [a2, b2] = useStore.getState().todos;
+    expect(a2.due).toBe(today + 86400_000);
+    expect(a2.start).toBe(today + 86400_000 + 20 * 3600_000);
+    expect(b2.due).toBe(today + 86400_000);
+    useStore.getState().undo();
+    expect(useStore.getState().todos[1].due).toBe(today - 86400_000);
+  });
+});

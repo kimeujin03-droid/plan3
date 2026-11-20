@@ -48,14 +48,6 @@ export function doneToday(todo: Todo, intervals: Interval[], activities: Activit
   return activities.filter((a) => a.id === todo.activityId || a.parentId === todo.activityId).reduce((sum, a) => sum + (totals[a.id] ?? 0), 0);
 }
 
-function RemoveButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button className="pill" style={{ background: 'var(--bg)', minHeight: 36 }} onClick={onClick}>
-      지우기
-    </button>
-  );
-}
-
 function PinIcon() {
   return (
     <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -119,8 +111,9 @@ function SplitButton({ todo }: { todo: Todo }) {
     );
   return (
     <button
-      className="pill"
-      style={{ background: 'var(--moa)', minHeight: 36 }}
+      className="act plus"
+      aria-label="잘게 쪼개기"
+      title="잘게 쪼개기"
       disabled={busy}
       onClick={async () => {
         if (!(ai && api)) {
@@ -134,7 +127,7 @@ function SplitButton({ todo }: { todo: Todo }) {
         else setManual(true);
       }}
     >
-      {busy ? '나누는 중…' : '잘게 쪼개기'}
+      {busy ? '…' : '＋'}
     </button>
   );
 }
@@ -223,7 +216,9 @@ export function GoalRow({ todo, today }: { todo: Todo; today: number }) {
         <div className="tag">
           {fmtDur(done)} / {fmtDur(target)}
         </div>
-        {open && <RemoveButton onClick={() => remove(todo.id)} />}
+        <button className="todo-x" aria-label={`${todo.text} 지우기`} onClick={() => remove(todo.id)}>
+          ×
+        </button>
       </div>
       <div className="bar" role="img" aria-label={`오늘 ${fmtDur(done)}, 목표 ${fmtDur(target)}`}>
         <i style={{ width: `${Math.min(100, target ? (done / target) * 100 : 0)}%`, background: color }} />
@@ -238,6 +233,7 @@ export function TodoRow({ todo, today, clock }: { todo: Todo; today: number; clo
   // 지우기는 완료와 헷갈리지 않게, 글자를 눌러 펼쳤을 때만 보인다.
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
+  const postpone = useStore((s) => s.postponeTodo);
   const when = todo.done ? null : whenOf(todo, today, clock);
   // 일정(약속·기상)은 진행도가 의미 없다. 마감과 기한 없는 일에만 10칸을 보여준다.
   // 진행률은 켠 일(또는 단계로 쪼갠 일)에만. 약속·장보기는 체크만으로 충분하다.
@@ -258,21 +254,29 @@ export function TodoRow({ todo, today, clock }: { todo: Todo; today: number; clo
           <button className="grow todo-text" aria-expanded={open} style={{ textDecoration: todo.done ? 'line-through' : undefined, color: todo.done ? 'var(--sub)' : undefined }} onClick={() => setOpen(!open)}>
             {todo.text}
           </button>
+          {/* 지우기는 옆의 ×(잘못 눌러도 알림창에서 되돌리기) */}
+          <button className="todo-x" aria-label={`${todo.text} 지우기`} onClick={() => remove(todo.id)}>
+            ×
+          </button>
         </div>
         {open && (
-          <div className="row" style={{ gap: 6 }}>
+          <div className="acts">
             {!todo.done && !todo.steps?.length && (todo.start === undefined || todo.dueAt !== undefined) && <SplitButton todo={todo} />}
+            {!todo.done && (
+              <button className="act" onClick={() => postpone(todo.id)}>
+                {todo.due !== null && todo.due > today ? '하루 미루기' : '내일로'}
+              </button>
+            )}
             {canTrack && (
-              <button className="pill" style={{ background: 'var(--bg)', minHeight: 36 }} onClick={() => trackProgress(todo.id, true)}>
+              <button className="act" onClick={() => trackProgress(todo.id, true)}>
                 진행률
               </button>
             )}
             {!todo.done && (
-              <button className="pill" style={{ background: 'var(--bg)', minHeight: 36 }} onClick={() => setEditing(true)}>
+              <button className="act" onClick={() => setEditing(true)}>
                 고치기
               </button>
             )}
-            <RemoveButton onClick={() => remove(todo.id)} />
           </div>
         )}
         {editing && <EditSheet todo={todo} onClose={() => setEditing(false)} />}

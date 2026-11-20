@@ -186,3 +186,11 @@ describe('이어진 두 일은 나눠서', () => {
     ]);
   });
 });
+
+describe('"오늘 ~하기/사기"는 오늘 할 일', () => {
+  it('오늘 납땜 기기 사기', () => {
+    const now = new Date(2026, 10, 20, 19, 0).getTime();
+    const today = new Date(2026, 10, 20).getTime();
+    expect(parse('오늘 납땜 기기 사기', DEFAULT_ACTIVITIES, now, today)[0]).toMatchObject({ type: 'todo', text: '납땜 기기 사기', due: today });
+  });
+});

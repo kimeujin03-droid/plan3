@@ -74,6 +74,7 @@ import { describeSeries, materializeSeries } from './lib/series';
 import type { Activity, Data, EraseMode, Focus, Look, Memory, PaintMode, Period, Series, TimerState, Todo } from './lib/types';
 
 /** 매주 고정 일정을 쉬는 구간 */
+const DAY_MS = 24 * 3600_000;
 const pausesOf = (d: { periods?: Period[] }) => (d.periods ?? []).filter((p) => p.pause);
 
 /** 루틴(매주 고정)의 활동 짐작: 이름에 활동 이름이 들어 있으면 그것, 아니면 '수업'(시간표가 대부분이라서) */
@@ -142,6 +143,8 @@ interface Store extends Data {
   removeTodo: (id: string) => void;
   /** 짠 계획을 고친다(이름·날짜·시각·장소·활동). 시각을 정한 계획이면 격자의 계획 칠도 옮긴다. 되돌릴 수 있다. */
   updateTodo: (id: string, patch: Partial<Pick<Todo, 'text' | 'due' | 'dueAt' | 'start' | 'end' | 'place' | 'activityId' | 'minutes'>>) => void;
+  /** 내일로(이미 앞날이면 하루 뒤로) 미룬다. 시각·마감 시각도 같이 옮긴다. 되돌릴 수 있다. */
+  postponeTodo: (id: string) => void;
   /** 매주 고정 일정을 고친다. 앞으로의 안 한 날들은 새 요일·시각으로 다시 만든다. 되돌릴 수 있다. */
   updateSeries: (id: string, patch: Partial<Pick<Series, 'text' | 'days' | 'startMin' | 'endMin' | 'place' | 'until' | 'activityId'>>) => void;
   /** 기록 하나를 통째로 지운다. 되돌릴 수 있다. */
@@ -769,6 +772,20 @@ export const useStore = create<Store>()(
           delete next.seriesId;
         }
         set({ todos: before.todos.map((t) => (t.id === id ? next : t)), intervals, series, undoData: before, lastReply: { text: '고쳤어.', at: now, undo: true } });
+      },
+
+      postponeTodo: (id) => {
+        const s = get();
+        const t = s.todos.find((x) => x.id === id);
+        if (!t) return;
+        const now = Date.now();
+        const today = logicalToday(now, s.intervals);
+        const from = t.due ?? (t.start !== undefined ? dayStart(t.start) : today);
+        const to = Math.max(from, today) + DAY_MS;
+        const shift = (ms: number | undefined) => (ms === undefined ? undefined : ms + (to - from));
+        s.updateTodo(id, { due: to, ...(t.start !== undefined ? { start: shift(t.start), end: shift(t.end) } : {}), ...(t.dueAt !== undefined ? { dueAt: shift(t.dueAt) } : {}) });
+        const d = new Date(to);
+        set({ lastReply: { text: `"${t.text}" ${d.getMonth() + 1}/${d.getDate()}(${'일월화수목금토'[d.getDay()]})로 미뤘어.`, at: now, undo: true } });
       },
 
       updateSeries: (id, patch) => {
