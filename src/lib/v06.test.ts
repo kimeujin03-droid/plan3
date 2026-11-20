@@ -251,3 +251,39 @@ describe('일정 고치기(분 단위)', () => {
     expect(frac([iv(-5, 20)], 'exec', 'study', cs, cs)).toEqual([0, 1]);
   });
 });
+
+describe('말 고치기(답장·"아니")', () => {
+  it('"아니 ~"는 바로 앞의 말이 남긴 것을 걷어 내고 다시 적는다', async () => {
+    const { useStore, emptyData } = await import('../store');
+    useStore.setState({ ...emptyData(), ai: false, undoData: null, lastReply: null, raw: [] });
+    const st = useStore.getState();
+    st.say('공부 시작');
+    expect(useStore.getState().intervals.filter((iv) => iv.end === null).map((iv) => iv.activityId)).toEqual(['study']);
+    st.say('아니 과제 시작');
+    const s = useStore.getState();
+    expect(s.intervals.filter((iv) => iv.end === null).map((iv) => iv.activityId)).toEqual(['hw']);
+    expect(s.intervals.some((iv) => iv.activityId === 'study')).toBe(false);
+    expect(s.raw[0].fixedBy).toBe(s.raw[1].id);
+    expect(s.raw[1].fixOf).toBe(s.raw[0].id);
+    expect(s.lastReply?.text.startsWith('고쳤어')).toBe(true);
+    // 되돌리면 고치기 전으로
+    s.undo();
+    expect(useStore.getState().intervals.filter((iv) => iv.end === null).map((iv) => iv.activityId)).toEqual(['study']);
+  });
+
+  it('답장으로 고른 말을 고친다: 지난 기록의 시간을 옮긴다', async () => {
+    const { useStore, emptyData } = await import('../store');
+    useStore.setState({ ...emptyData(), ai: false, undoData: null, lastReply: null, raw: [] });
+    const st = useStore.getState();
+    const d = new Date();
+    if (d.getHours() < 15) return; // 오후에만 확인(지난 시간이어야 해서)
+    st.say('오늘 8시부터 9시까지 공부했어');
+    st.say('오늘 하늘이 예쁘다');
+    const first = useStore.getState().raw[0];
+    st.say('오늘 13시부터 14시까지 공부했어', { fixOf: first.id });
+    const ex = useStore.getState().intervals.filter((iv) => iv.kind === 'exec' && iv.activityId === 'study');
+    expect(ex.map((iv) => new Date(iv.start).getHours())).toEqual([13]);
+    // 다른 말(한마디)은 그대로
+    expect(useStore.getState().memories).toHaveLength(1);
+  });
+});

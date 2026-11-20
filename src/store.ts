@@ -50,7 +50,12 @@ function sameCommands(a: Command[], b: Command[]): boolean {
  * 규칙이 알아들은 결과가 미심쩍은지. 미심쩍을 때만 AI에 묻는다(빠르게 하려고).
  * 이름에 말끝이 남았거나("해볼까"), 모르는 활동 이름이 나왔을 때.
  */
+/** "아니 ~", "아니야 ~", "그게 아니라 ~": 바로 앞의 말을 고치는 말 */
+const CORRECT = /^(아니\s*아니|아니야|아니라|아냐|아니|그게\s*아니라|정정)[\s,.!~…]+/;
+
 function needsAi(cmds: Command[], text: string): boolean {
+  // "화요일 시험 있어서 오늘 3시간 하자"처럼 까닭과 날짜가 둘 이상 섞인 말은 규칙이 헷갈린다.
+  if (/(있어서|이라서|라서|때문에|니까)/.test(text) && cmds.some((c) => c.type === 'todo')) return true;
   return cmds.some((c) => {
     if (c.type === 'memo') return true;
     if (c.type === 'todo') return /(어|야|여|지|까|네|요|음|다|게|래|고|데|나|자|듯)$/.test(c.text) || c.text.length > 16;
@@ -60,7 +65,8 @@ function needsAi(cmds: Command[], text: string): boolean {
   });
 }
 import { recordPlanEdit } from './lib/plans';
-import { CELL, dayStart, fmtDue, fmtDur, fmtHM } from './lib/time';
+import { diffEffects, revertEffects } from './lib/effects';
+import { CELL, dayStart, fmtDue, fmtDur, fmtHM, HOUR } from './lib/time';
 import { logicalToday } from './lib/day';
 import { describeSeries, materializeSeries } from './lib/series';
 import type { Activity, Data, EraseMode, Focus, Look, Memory, PaintMode, Period, Series, TimerState, Todo } from './lib/types';
@@ -93,7 +99,10 @@ interface Store extends Data {
   lastReply: Reply | null;
   /** AI 대답을 기다리는 중 */
   thinking: boolean;
-  say: (text: string) => void;
+  say: (text: string, opts?: { fixOf?: string }) => void;
+  /** 채팅에서 밀어서 고른 '고칠 말'(답장) */
+  replyTo: string | null;
+  setReplyTo: (id: string | null) => void;
   undo: () => void;
   beginStroke: () => void;
   paint: (cellStart: number, mode: PaintMode, activityId: string) => void;
@@ -294,11 +303,13 @@ export function applyCommand(d: Data, cmd: Command, now: number): string {
       }
       if (active.some((iv) => iv.activityId === act.id)) return `이미 ${act.name} 하는 중이야.`;
       if (active.length >= 2) return '지금 두 가지를 같이 하는 중이야. 하나가 끝나면 말해줘.';
+      // "1시부터 하는 중": 말한 시각부터(지금보다 앞일 때만)
+      const from = cmd.at !== undefined && cmd.at < now ? Math.floor(cmd.at / 60_000) * 60_000 : now;
       d.intervals = [
         ...d.intervals,
-        { id: uid('iv'), activityId: act.id, kind: 'exec', start: now, end: null, source: 'timer' },
+        { id: uid('iv'), activityId: act.id, kind: 'exec', start: from, end: null, source: 'timer' },
       ];
-      return `${act.name} 시작! ${fmtHM(now)}부터 적을게.`;
+      return `${act.name} 시작! ${fmtHM(from)}부터 적을게.`;
     }
     case 'end': {
       const active = activeIntervals(d.intervals);
@@ -426,48 +437,80 @@ export const useStore = create<Store>()(
       undoData: null,
       lastReply: null,
       thinking: false,
+      replyTo: null,
       cheerAt: 0,
 
-      say: (text) => {
-        const trimmed = text.trim();
+      setReplyTo: (id) => set({ replyTo: id }),
+
+      say: (text, opts) => {
+        let trimmed = text.trim();
         if (!trimmed) return;
         const now = Date.now();
         const s0 = get();
         const before = pickData(s0);
         const rawId = uid('raw');
         const today = logicalToday(now, s0.intervals);
-        const ruleCmds = parse(trimmed, s0.activities, now, today);
+        // 고치는 말: 답장(밀어서 고르기)으로 골랐거나, "아니 ~"로 시작하면 바로 앞의 말(1시간 안)을 고친다.
+        const lead = trimmed.match(CORRECT);
+        const last = [...s0.raw].reverse().find((r) => r.action !== 'pending' && !r.fixedBy);
+        const target = opts?.fixOf
+          ? s0.raw.find((r) => r.id === opts.fixOf)
+          : lead && last && last.fx && now - last.at < HOUR
+            ? last
+            : undefined;
+        const body = lead && target ? trimmed.slice(lead[0].length).trim() || trimmed : trimmed;
+        // 고칠 말이 남긴 것을 먼저 걷어 낸다(되돌리기는 걷어 내기 전으로).
+        const base: Data = target ? revertEffects(before, target.fx, now) : before;
+        if (target) set({ ...base });
+        let ruleCmds = parse(body, s0.activities, now, today);
+        // "13시부터 14시까지였어"처럼 활동을 빼고 고치면 원래 말의 활동을 빌려 온다
+        const prevAct = target?.fx?.iv?.[0]?.activityId;
+        const prevName = prevAct ? s0.activities.find((a) => a.id === prevAct)?.name : undefined;
+        const vague = (c: Command) => c.type === 'memo' || ((c.type === 'backfill' || c.type === 'start') && !c.activityId);
+        if (target && prevName && ruleCmds.every(vague)) {
+          const borrowed = parse(`${prevName} ${body}`, s0.activities, now, today);
+          if (!borrowed.every(vague)) ruleCmds = borrowed;
+        }
+        if (target && ruleCmds.every((c) => c.type === 'memo')) {
+          // "13시로" 같은 짧은 고침은 원래 말에 붙여 다시 읽어 본다
+          const merged = parse(`${target.text} ${body}`, s0.activities, now, today);
+          if (!merged.every((c) => c.type === 'memo')) ruleCmds = merged;
+        }
         if (!ruleCmds.length) return;
+        if (opts?.fixOf) trimmed = body;
+        const prev = target ? { text: target.text, reply: target.reply, at: target.at } : undefined;
 
         // 명령을 반영하고 원문 기록의 결과 칸을 채운다. 시각은 말한 순간(now)을 쓴다.
         const finish = (cmds: Command[], via: 'rule' | 'ai') => {
           const cur = pickData(get());
           const d: Data = { ...cur };
-          const reply = cmds.map((c) => applyCommand(d, c, now)).join(' ');
+          const said = cmds.map((c) => applyCommand(d, c, now)).join(' ');
+          const reply = target ? `고쳤어: ${said}` : said;
           const action = `${via}:${cmds.map((c) => c.type).join('+')}`;
-          d.raw = d.raw.some((r) => r.id === rawId)
-            ? d.raw.map((r) => (r.id === rawId ? { ...r, action, reply } : r))
-            : [...d.raw, { id: rawId, at: now, text: trimmed, action, reply }];
-          set({ ...d, undoData: before, lastReply: { text: reply, at: Date.now(), undo: true }, thinking: false });
+          const fx = diffEffects(cur, d, now);
+          const entry = { id: rawId, at: now, text: trimmed, action, reply, fx, ...(target ? { fixOf: target.id } : {}) };
+          d.raw = d.raw.some((r) => r.id === rawId) ? d.raw.map((r) => (r.id === rawId ? { ...r, ...entry } : r)) : [...d.raw, entry];
+          if (target) d.raw = d.raw.map((r) => (r.id === target.id ? { ...r, fixedBy: rawId, fx: undefined } : r));
+          set({ ...d, undoData: before, lastReply: { text: reply, at: Date.now(), undo: true }, thinking: false, replyTo: null });
           void rescheduleNudge(d.nudge && !d.sleeping);
         };
 
         const api = s0.apiOverride || DEFAULT_API;
-        // 규칙이 깔끔하게 알아들었으면 바로 반영한다. 미심쩍을 때만 AI를 기다린다.
-        const notUnderstood = needsAi(ruleCmds, trimmed);
+        // 규칙이 깔끔하게 알아들었으면 바로 반영한다. 미심쩍을 때만 AI를 기다린다. 고치는 말은 늘 AI에게도 묻는다.
+        const notUnderstood = needsAi(ruleCmds, body) || !!target;
         const online = typeof navigator === 'undefined' || navigator.onLine !== false;
         const onlyMemo = ruleCmds.every((c) => c.type === 'memo');
+        const running = activeIntervals(base.intervals).map((iv) => nameOf(s0, iv.activityId));
         if (notUnderstood && s0.ai && api && online && !onlyMemo) {
           // 규칙이 뭔가 알아들었으면 기다리게 하지 않는다: 먼저 바로 적고, AI가 다르게 읽으면 조용히 고친다.
           finish(ruleCmds, 'rule');
           const applied = get();
-          const running = activeIntervals(s0.intervals).map((iv) => nameOf(s0, iv.activityId));
-          void aiParse(api, trimmed, s0.activities, running, now, today).then((aiCmds) => {
+          void aiParse(api, body, s0.activities, running, now, today, prev).then((aiCmds) => {
             if (!aiCmds || sameCommands(aiCmds, ruleCmds)) return;
             const cur = get();
             // 그사이 다른 것을 기록했으면 건드리지 않는다.
             if (cur.intervals !== applied.intervals || cur.todos !== applied.todos || cur.notes !== applied.notes || cur.raw !== applied.raw) return;
-            set({ ...before, raw: cur.raw });
+            set({ ...base, raw: cur.raw });
             finish(aiCmds, 'ai');
             const fixed = get().lastReply;
             if (fixed) set({ lastReply: { ...fixed, text: `다시 보니 이게 맞겠다: ${fixed.text}` } });
@@ -477,13 +520,12 @@ export const useStore = create<Store>()(
         if (notUnderstood && s0.ai && api && online) {
           // 원문은 바로 저장하고, 해석만 서버를 기다린다. 서버가 실패하면 메모로 남는다.
           set({
-            raw: [...s0.raw, { id: rawId, at: now, text: trimmed, action: 'pending', reply: '' }],
+            raw: [...get().raw, { id: rawId, at: now, text: trimmed, action: 'pending', reply: '' }],
             lastReply: { text: '잠깐만, 알아듣는 중…', at: now },
             undoData: null,
             thinking: true,
           });
-          const running = activeIntervals(s0.intervals).map((iv) => nameOf(s0, iv.activityId));
-          void aiParse(api, trimmed, s0.activities, running, now, today).then((aiCmds) =>
+          void aiParse(api, body, s0.activities, running, now, today, prev).then((aiCmds) =>
             aiCmds ? finish(aiCmds, 'ai') : finish(ruleCmds, 'rule'),
           );
           return;

@@ -33,6 +33,12 @@ export interface RawEntry {
   text: string;
   action: string;
   reply: string;
+  /** 이 말이 기록에 남긴 것(고칠 때 정확히 걷어 내려고) */
+  fx?: import('./effects').Effects;
+  /** 이 말은 앞의 어떤 말을 고친 것인지 */
+  fixOf?: string;
+  /** 이 말을 나중에 고친 말 */
+  fixedBy?: string;
 }
 
 export interface Todo {

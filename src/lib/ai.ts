@@ -47,9 +47,14 @@ export function toCommands(wire: unknown, activities: Activity[], now: number, t
     const name = str(raw.activity, 20);
     const act = name ? activities.find((a) => a.name === name) ?? matchActivity(name, activities) : null;
     switch (raw.type) {
-      case 'start':
-        if (name) out.push({ type: 'start', name, activityId: act?.id ?? null });
+      case 'start': {
+        if (!name) break;
+        // "1시부터 하는 중"처럼 시작 시각을 말했으면 그때부터(지금보다 뒤면 무시). 자정 넘은 새벽이면 어제 시각.
+        let at = clock(raw.start, base);
+        if (at !== null && at > now) at -= 24 * HOUR;
+        out.push({ type: 'start', name, activityId: act?.id ?? null, ...(at !== null && now - at < 16 * HOUR ? { at } : {}) });
         break;
+      }
       case 'end':
         out.push({ type: 'end', activityId: act?.id ?? null });
         break;
@@ -144,6 +149,8 @@ export async function aiParse(
   running: string[],
   now: number,
   today: number = dayStart(now),
+  /** 앞의 말을 고치는 중이면 그 말(그때 시각, 그때 앱이 한 일) */
+  prev?: { text: string; reply: string; at: number },
 ): Promise<Command[] | null> {
   if (!apiUrl) return null;
   const d = new Date(now);
@@ -161,6 +168,9 @@ export async function aiParse(
         now: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
         // 사용자가 느끼는 오늘(자기 전의 새벽은 전날)과 그 요일
         today: `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())} ${'일월화수목금토'[t.getDay()]}`,
+        ...(prev
+          ? { prev: { text: prev.text.slice(0, 300), reply: prev.reply.slice(0, 200), at: `${pad(new Date(prev.at).getHours())}:${pad(new Date(prev.at).getMinutes())}` } }
+          : {}),
       }),
       signal: ctrl.signal,
     });

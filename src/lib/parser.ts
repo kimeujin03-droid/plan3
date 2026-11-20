@@ -2,7 +2,7 @@ import { addDays, dayStart, MIN, weekStart } from './time';
 import type { Activity } from './types';
 
 export type Command =
-  | { type: 'start'; name: string; activityId: string | null }
+  | { type: 'start'; name: string; activityId: string | null; at?: number }
   | { type: 'end'; activityId: string | null }
   /**
    * 계획·할 일에 넣기. due는 그날 0시(없으면 null).
@@ -50,7 +50,7 @@ export function matchActivity(text: string, activities: Activity[]): Activity | 
 const CLOCK = String.raw`(오전|오후|아침|낮|점심|저녁|밤|새벽)?\s*(\d{1,2})\s*시(?!간)\s*(?:(\d{1,2})\s*분|(반))?`;
 const RANGE = new RegExp(`${CLOCK}\\s*(?:부터|에서|~|-)\\s*${CLOCK}\\s*(?:까지)?\\s*(.*)$`);
 const POINT = new RegExp(`${CLOCK}\\s*(?:쯤에|쯤|에)?\\s*(.*)$`);
-const HOURS = /(\d+(?:\.\d+)?)\s*시간(?:\s*(\d{1,2})\s*분)?(?:\s*(?:정도|쯤|동안|씩))?/;
+const HOURS = /(\d+(?:\.\d+)?)\s*시간(?:\s*(\d{1,2})\s*분)?(?:\s*(?:정도|쯤|동안|씩|만))?/;
 
 /** 하루 안의 분으로. guessPm: 때를 말하지 않은 1~6시를 오후로 본다(앞날 계획에서는 새벽 약속이 드물다). */
 function minutesOf(mer: string | undefined, h: string, m: string | undefined, half: string | undefined, guessPm: boolean): number {
@@ -111,7 +111,7 @@ function resolveDay(m: RegExpMatchArray, today: number): number {
 }
 
 const PAST = /(했어|했음|했다|했지|했네|갔어|갔다|봤어|먹었|였어|었어|았어)/;
-const FUTURE = /(거야|거여|거임|ㄹ게|할게|할래|할까|볼까|볼게|려고|예정|할\s*듯|해야|갈게|가야|있어|있음|있다|약속|마감|까지|감$|가$|함$)/;
+const FUTURE = /(거야|거여|거임|ㄹ게|할게|할래|할까|볼까|볼게|려고|예정|할\s*듯|해야|갈게|가야|있어|있음|있다|약속|마감|까지|감$|가$|함$|하자|한다고|할\s*거|할거)/;
 
 /** 계획 문장의 꼬리("할 거야", "해야지", "가 있어")를 떼고 이름만 남긴다. */
 const JONG_RIEUL = 8;
@@ -136,7 +136,7 @@ function planText(s: string): string {
     .replace(/\s*(을|를)?\s*(해\s*볼까|해\s*볼게|해\s*보려고|해\s*볼래|하려고|할까|할까봐)$/, '');
   out = verbToNoun(out)
     .replace(/\s*(이|가)?\s*(있어요?|있음|있다)$/, '')
-    .replace(/\s*(을|를)?\s*(할\s*거야|할\s*거임|할\s*거|할게|할래|할\s*예정이야|할\s*예정|할\s*듯|해야지|해야\s*하는데|해야\s*되는데|해야\s*돼|해야\s*해|해야\s*함|해야겠다|하기|제출|내기|함)$/, '')
+    .replace(/\s*(을|를)?\s*(할\s*거라고|할\s*거야|할\s*거임|할\s*거|할게|할래|할\s*예정이야|할\s*예정|할\s*듯|해야지|해야\s*하는데|해야\s*되는데|해야\s*돼|해야\s*해|해야\s*함|해야겠다|하자|한다고|하기|제출|내기|함)$/, '')
     .replace(/에\s*(감|갈\s*거야|갈게|가야\s*해|가야\s*돼|가야지|가)$/, '에 가기')
     .replace(/\s*(갈\s*거야|갈게|가야\s*해|가야\s*돼|가야지)$/, ' 가기')
     .replace(/(\S)\s*하기$/, '$1')
@@ -280,7 +280,7 @@ export function parse(text: string, activities: Activity[], now: number, today: 
   // "내일 …부터 …까지"는 지난 기록이 아니다. 계획으로 못 읽었으면 아래(메모)로 보낸다.
   if (r && !/(내일|모레|글피|다음\s*주|요일)/.test(body)) {
     const span = readSpan(body, false);
-    const rest = span ? clean(span.rest.replace(/(했어|했음|함|했다|했지|갔어|봤어)$/, '')) : '';
+    const rest = span ? clean(span.rest.replace(/\s*(했어|했음|함|했다|했지|갔어|봤어|였어|이었어|였음|이야)$/, '')) : '';
     if (span && span.end !== null && rest) {
       const base = dayStart(now);
       return [{ type: 'backfill', name: rest, activityId: matchActivity(rest, activities)?.id ?? null, start: base + span.start * MIN, end: base + span.end * MIN }];
@@ -298,6 +298,14 @@ export function parse(text: string, activities: Activity[], now: number, today: 
   if (out.length) return out;
 
   if (END.test(t)) return [{ type: 'end', activityId: matchActivity(t, activities)?.id ?? null }];
+
+  // "공부 3시간 하자", "통계 3시간 한다고": 양을 정해 앞으로 하겠다는 말은 지금 시작이 아니라 오늘 계획이다.
+  const amount = t.match(HOURS);
+  if (amount && /(하자|한다고|할\s*거|할거|할게|할래|해야|하려고|해볼|해\s*볼)/.test(t)) {
+    const what = planText(`${t.slice(0, amount.index)} ${t.slice(amount.index! + amount[0].length)}`.replace(CALL, '').replace(/^\s*(오늘|이제|지금)\s*/, '').replace(/(^|\s)한\s+/, ' '));
+    const hrs = `${amount[1]}시간${amount[2] ? ` ${amount[2]}분` : ''}`;
+    if (what) return [{ type: 'todo', text: `${what} ${hrs}`, due: today, activityId: matchActivity(what, activities)?.id ?? null }];
+  }
 
   const start = t.match(START);
   if (start) {

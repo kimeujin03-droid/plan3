@@ -154,3 +154,21 @@ describe('반복과 매일 목표', () => {
     expect(p('매일 2시간 공부')).toEqual([{ type: 'todo', text: '공부 매일 2시간', due: null, minutes: 120, activityId: 'study' }]);
   });
 });
+
+describe('양을 정한 앞으로의 말은 오늘 계획', () => {
+  const acts = [{ id: 'study', name: '공부', color: '#fff' }] as never;
+  const now = new Date(2026, 10, 20, 16, 28).getTime();
+  const today = new Date(2026, 10, 20).getTime();
+  it.each([
+    ['오늘 통계수학 공부 3시간 한다고', '통계수학 공부 3시간'],
+    ['통계수학 공부 3시간 하자', '통계수학 공부 3시간'],
+    ['한 3시간만 공부 하자', '공부 3시간'],
+  ])('%s', (text, want) => {
+    const cmds = parse(text, acts, now, today);
+    expect(cmds).toHaveLength(1);
+    expect(cmds[0]).toMatchObject({ type: 'todo', text: want, due: today });
+  });
+  it('그냥 시작은 그대로 시작', () => {
+    expect(parse('공부 시작', acts, now, today)[0].type).toBe('start');
+  });
+});

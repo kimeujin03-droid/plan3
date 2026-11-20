@@ -5,6 +5,7 @@ import { FOCUS_SHADE, rootOf, SLEEP_ID } from '../lib/palette';
 import { addDays, DAY, fmtDur, fmtHM, fmtMD, weekStart } from '../lib/time';
 import { MemoryList } from '../components/Memories';
 import { MoodLog } from '../components/MoodLog';
+import { Chat } from '../components/Chat';
 import { useStore } from '../store';
 
 const DOW = ['월', '화', '수', '목', '금', '토', '일'];
@@ -57,7 +58,7 @@ export function Review({ now }: { now: number }) {
           기분
         </button>
         <button aria-pressed={tab === 'raw'} onClick={() => setTab('raw')}>
-          한 말
+          대화
         </button>
       </div>
 
@@ -164,27 +165,7 @@ export function Review({ now }: { now: number }) {
 
       {tab === 'memory' && <MemoryList />}
       {tab === 'mood' && <MoodLog now={now} />}
-      {tab === 'raw' && (
-        <>
-          {s.raw.length === 0 && <div className="empty">모아에게 한 말이 그대로 여기에 남아.</div>}
-          {[...s.raw]
-            .reverse()
-            .slice(0, 200)
-            .map((r) => (
-              <div className="card" key={r.id} style={{ gap: 4 }}>
-                <div className="sub">
-                  {fmtMD(r.at)} {fmtHM(r.at)}
-                </div>
-                <div style={{ fontSize: 15 }}>{r.text}</div>
-                {r.reply && (
-                  <div className="sub" style={{ fontSize: 13 }}>
-                    → {r.reply}
-                  </div>
-                )}
-              </div>
-            ))}
-        </>
-      )}
+      {tab === 'raw' && <Chat />}
     </div>
   );
 }

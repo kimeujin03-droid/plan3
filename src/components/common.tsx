@@ -92,11 +92,22 @@ function Suggestions({ text, onPick }: { text: string; onPick: (next: string) =>
 
 export function InputBar({ placeholder = '모아야, 나 지금…' }: { placeholder?: string }) {
   const say = useStore((s) => s.say);
+  const replyTo = useStore((s) => s.replyTo);
+  const setReplyTo = useStore((s) => s.setReplyTo);
+  const quoted = useStore((s) => (s.replyTo ? s.raw.find((r) => r.id === s.replyTo) : undefined));
   const [text, setText] = useState('');
   const field = useRef<HTMLInputElement>(null);
   const [week, setWeek] = useState<string | null>(null);
+  useEffect(() => {
+    if (replyTo) field.current?.focus();
+  }, [replyTo]);
   const send = () => {
     if (!text.trim()) return;
+    if (replyTo) {
+      say(text, { fixOf: replyTo });
+      setText('');
+      return;
+    }
     // 한 주 일정을 길게 부탁하면 한 주 짜기 창으로 넘긴다.
     if (looksLikeWeekRequest(text)) {
       setWeek(text);
@@ -109,6 +120,17 @@ export function InputBar({ placeholder = '모아야, 나 지금…' }: { placeho
   return (
     <div className="inputwrap">
       {week !== null && <WeekPlanSheet initialText={week} onClose={() => setWeek(null)} />}
+      {quoted && (
+        <div className="reply-bar">
+          <span className="grow">
+            <b>↩ 고치기</b> {quoted.text}
+            <em>예: "13시부터야", "공부 말고 과제"</em>
+          </span>
+          <button type="button" aria-label="고치기 그만" onClick={() => setReplyTo(null)}>
+            ✕
+          </button>
+        </div>
+      )}
       <Suggestions
         text={text}
         onPick={(next) => {
@@ -126,7 +148,7 @@ export function InputBar({ placeholder = '모아야, 나 지금…' }: { placeho
         <input
           ref={field}
           aria-label="모아에게 말하기"
-          placeholder={placeholder}
+          placeholder={quoted ? '어떻게 고칠까?' : placeholder}
           value={text}
           onChange={(e) => setText(e.target.value)}
           enterKeyHint="send"
