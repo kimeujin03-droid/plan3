@@ -15,6 +15,9 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # moa 브랜치 빌드는 'moa-latest' 릴리스에 APK를 올린다(로그인 없이 폰에서 바로 받는 고정 링크).
+    permissions:
+      contents: write
     steps:
     - uses: actions/checkout@v4
 
@@ -56,3 +59,14 @@ jobs:
       with:
         name: app-debug-apk
         path: android/app/build/outputs/apk/debug/app-debug.apk
+
+    - name: Publish APK (fixed download link)
+      if: github.event_name == 'push' && github.ref == 'refs/heads/moa'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        cp android/app/build/outputs/apk/debug/app-debug.apk MOA.apk
+        VERSION=$(node -p "require('./package.json').version")
+        gh release view moa-latest >/dev/null 2>&1 || gh release create moa-latest --title "MOA 최신" --notes "moa 브랜치 최신 빌드" --prerelease --target moa
+        gh release upload moa-latest MOA.apk --clobber
+        gh release edit moa-latest --title "MOA 최신 ($VERSION)" --notes "버전 $VERSION · 빌드 #${{ github.run_number }} · ${GITHUB_SHA::7}. 받기: https://github.com/${{ github.repository }}/releases/download/moa-latest/MOA.apk"
