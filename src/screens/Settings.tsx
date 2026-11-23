@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import pkg from '../../package.json';
 import { DEFAULT_API } from '../lib/ai';
-import { exactAlarmStatus, openExactAlarmSetting, requestNudgePermission } from '../lib/notify';
+import { checkNotify, exactAlarmStatus, fixNotifyPermission, openAppSettings, openExactAlarmSetting, openNotifySettings, requestNudgePermission, testNotify, type NotifyCheck } from '../lib/notify';
 import { PICK_COLORS, SLEEP_ID } from '../lib/palette';
 import { listBackups, readBackup, shareExport } from '../lib/storage';
 import { Moa } from '../components/Moa';
@@ -344,12 +344,95 @@ function PlanAlertCard() {
         </div>
       )}
       {on && exact === 'granted' && <div className="sub" style={{ fontSize: 13 }}>정확한 시각에 울리도록 허용돼 있어.</div>}
+      <NotifyDoctor />
       <div className="row between">
         <div className="grow">
           <div className="h2" style={{ fontSize: 16 }}>아침·밤 한 줄</div>
           <div className="sub">아침 8시에 그날 계획, 밤 9시 반에 빈 시간 채우기를 한 줄로.</div>
         </div>
         <Switch on={brief} label="아침·밤 한 줄" onToggle={() => setBrief(!brief)} />
+      </div>
+    </div>
+  );
+}
+
+/** 알림이 안 올 때: 무엇이 막고 있는지 한 줄씩 보여 주고 바로 고치러 보낸다 */
+function NotifyDoctor() {
+  const [c, setC] = useState<NotifyCheck | null | 'web'>(null);
+  const [msg, setMsg] = useState('');
+  const check = () => void checkNotify().then((r) => setC(r ?? 'web'));
+  useEffect(() => {
+    check();
+    // 설정 화면에 갔다 오면 다시 본다
+    const again = () => document.visibilityState === 'visible' && check();
+    document.addEventListener('visibilitychange', again);
+    return () => document.removeEventListener('visibilitychange', again);
+  }, []);
+  if (c === null) return null;
+  if (c === 'web') return <div className="sub" style={{ fontSize: 12 }}>알림은 폰 앱에서만 와.</div>;
+  const md = (ms: number) => {
+    const d = new Date(ms);
+    return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+  const rows: { ok: boolean; text: string; fix?: { label: string; run: () => void } }[] = [
+    { ok: c.allowed, text: c.allowed ? '앱 알림 허용됨' : '앱 알림이 꺼져 있어 — 이게 제일 흔한 이유야', fix: c.allowed ? undefined : { label: '켜기', run: () => void fixNotifyPermission() } },
+    { ok: !c.channelOff, text: c.channelOff ? "'계획 알림' 종류가 꺼져 있거나 소리 없음이야" : "'계획 알림' 종류 켜짐", fix: c.channelOff ? { label: '설정', run: () => void openNotifySettings() } : undefined },
+    {
+      ok: c.exact !== 'denied',
+      text: c.exact === 'denied' ? "'알람 및 리마인더'가 꺼져 있어서 늦게 올 수 있어" : '정각에 울리기 허용됨',
+      fix: c.exact === 'denied' ? { label: '허용', run: () => void openExactAlarmSetting() } : undefined,
+    },
+    {
+      ok: c.batteryOk,
+      text: c.batteryOk
+        ? '배터리 최적화에서 빠져 있음'
+        : c.samsung
+          ? "배터리 절약이 알림을 막을 수 있어 — 앱 정보 › 배터리 › '제한 없음'"
+          : '배터리 최적화가 알림을 늦추거나 막을 수 있어',
+      fix: c.batteryOk ? undefined : { label: '앱 정보', run: () => void openAppSettings() },
+    },
+  ];
+  return (
+    <div className="notify-doc">
+      <div className="row between">
+        <b style={{ fontSize: 13 }}>알림이 안 와?</b>
+        <button className="act" onClick={check}>
+          다시 보기
+        </button>
+      </div>
+      {rows.map((r) => (
+        <div key={r.text} className="row" style={{ gap: 8, alignItems: 'center' }}>
+          <span aria-hidden="true">{r.ok ? '✅' : '⚠️'}</span>
+          <span className="grow" style={{ fontSize: 13 }}>
+            {r.text}
+          </span>
+          {r.fix && (
+            <button className="act" style={{ background: 'var(--ink)', color: '#fff' }} onClick={r.fix.run}>
+              {r.fix.label}
+            </button>
+          )}
+        </div>
+      ))}
+      <div className="sub" style={{ fontSize: 12 }}>
+        예약된 알림 {c.pending}개{c.next ? ` · 다음: ${md(c.next.at)} ${c.next.title}` : ' — 시간 정한 계획이 없으면 0개가 맞아'}
+      </div>
+      <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+        <button
+          className="act"
+          onClick={() =>
+            void testNotify().then((ok) => {
+              setMsg(ok ? '10초 뒤에 시험 알림이 와. 화면을 꺼 두고 기다려 봐.' : '알림 허용이 안 돼서 못 보냈어. 위의 ⚠️부터 고쳐 줘.');
+              check();
+            })
+          }
+        >
+          🔔 10초 뒤 시험 알림
+        </button>
+        {msg && (
+          <span className="sub grow" style={{ fontSize: 12 }}>
+            {msg}
+          </span>
+        )}
       </div>
     </div>
   );

@@ -3134,3 +3134,23 @@ a.link {
 .act.plus {
   width: 30px;
 }
+
+.notify-doc {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+.notify-banner {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: #fff4d6;
+  font-size: 13px;
+}

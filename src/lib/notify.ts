@@ -1,4 +1,4 @@
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 
 const NUDGE_ID = 1;
 const TIMER_ID = 2;
@@ -217,5 +217,91 @@ export async function openExactAlarmSetting(): Promise<void> {
     await ln?.changeExactNotificationSetting();
   } catch {
     /* 지원하지 않는 기기 */
+  }
+}
+
+/* ───── 알림 점검 ───── */
+
+interface NativeNotify {
+  notifyStatus(o: { channel: string }): Promise<{ enabled: boolean; channelImportance: number; batteryIgnored: boolean; manufacturer: string }>;
+  openNotificationSettings(): Promise<void>;
+  openAppSettings(): Promise<void>;
+}
+const NativeN = registerPlugin<NativeNotify>('MoaWidget');
+
+export interface NotifyCheck {
+  /** 앱 알림 허용 */
+  allowed: boolean;
+  /** 정각 알람 허용(안드로이드 12+) */
+  exact: 'granted' | 'denied' | null;
+  /** 계획 알림 채널이 꺼졌거나 소리 없음으로 바뀌었는지 */
+  channelOff: boolean;
+  /** 배터리 최적화에서 빠져 있는지(삼성은 '제한 없음') */
+  batteryOk: boolean;
+  samsung: boolean;
+  /** 예약돼 있는 알림 수와 가장 가까운 것 */
+  pending: number;
+  next: { at: number; title: string } | null;
+}
+
+/** 알림이 안 올 때 무엇이 막고 있는지 한 번에 본다. 웹이면 null. */
+export async function checkNotify(): Promise<NotifyCheck | null> {
+  try {
+    const ln = await plugin();
+    if (!ln) return null;
+    const perm = await ln.checkPermissions();
+    const st = await NativeN.notifyStatus({ channel: CHANNEL }).catch(() => null);
+    const pend = await ln.getPending();
+    const list = pend.notifications
+      .map((n) => ({ at: n.schedule?.at ? new Date(n.schedule.at as unknown as string).getTime() : 0, title: n.title }))
+      .filter((n) => n.at > 0)
+      .sort((a, b) => a.at - b.at);
+    return {
+      allowed: perm.display === 'granted' && (st?.enabled ?? true),
+      exact: await exactAlarmStatus(),
+      channelOff: st ? st.channelImportance === 0 || (st.channelImportance > 0 && st.channelImportance < 3) : false,
+      batteryOk: st?.batteryIgnored ?? true,
+      samsung: /samsung/i.test(st?.manufacturer ?? ''),
+      pending: pend.notifications.length,
+      next: list[0] ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** 알림 허용을 다시 묻는다. 이미 거절했으면 안드로이드가 다시 묻지 않으므로 설정 화면을 연다. */
+export async function fixNotifyPermission(): Promise<void> {
+  try {
+    const ln = await plugin();
+    if (!ln) return;
+    const r = await ln.requestPermissions();
+    if (r.display !== 'granted') await NativeN.openNotificationSettings();
+  } catch {
+    await NativeN.openNotificationSettings().catch(() => undefined);
+  }
+}
+
+export async function openNotifySettings(): Promise<void> {
+  await NativeN.openNotificationSettings().catch(() => undefined);
+}
+export async function openAppSettings(): Promise<void> {
+  await NativeN.openAppSettings().catch(() => undefined);
+}
+
+/** 10초 뒤에 시험 알림 한 번 */
+export async function testNotify(): Promise<boolean> {
+  try {
+    const ln = await plugin();
+    if (!ln) return false;
+    const perm = await ln.checkPermissions();
+    if (perm.display !== 'granted' && (await ln.requestPermissions()).display !== 'granted') return false;
+    await ensureChannel(ln);
+    await ln.schedule({
+      notifications: [{ id: 3, title: '모아 시험 알림', body: '이게 보이면 알림은 잘 와!', channelId: CHANNEL, schedule: { at: new Date(Date.now() + 10_000), allowWhileIdle: true } }],
+    });
+    return true;
+  } catch {
+    return false;
   }
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Moa } from '../components/Moa';
 import { NextSheet } from '../components/NextSheet';
 import { StartGrid } from '../components/Pickers';
@@ -10,6 +10,7 @@ import { SLEEP_ID } from '../lib/palette';
 import { DAY, fmtDate, fmtDur, fmtHM } from '../lib/time';
 import { useStore } from '../store';
 import { byUrgency, GoalRow, TodoRow, whenOf } from './Todos';
+import { checkNotify, fixNotifyPermission } from '../lib/notify';
 
 interface Props {
   now: number;
@@ -232,6 +233,36 @@ const HELLO: Record<string, [string, string]> = {
   idle: ['지금 뭐 해?', '누르면 바로 시작'],
 };
 
+/** 알림이 막혀 있으면 첫 화면 맨 위에 한 줄로 알려 준다(계획 알림을 켜 둔 경우만) */
+function NotifyBanner({ onOpenSettings }: { onOpenSettings: () => void }) {
+  const on = useStore((s) => s.planAlerts || s.dailyBrief);
+  const [bad, setBad] = useState<string | null>(null);
+  useEffect(() => {
+    if (!on) return;
+    const check = () =>
+      void checkNotify().then((c) => {
+        if (!c) return setBad(null);
+        setBad(!c.allowed ? '알림이 꺼져 있어서 계획 알림이 안 와.' : c.channelOff ? "'계획 알림' 종류가 꺼져 있어." : null);
+      });
+    check();
+    const again = () => document.visibilityState === 'visible' && check();
+    document.addEventListener('visibilitychange', again);
+    return () => document.removeEventListener('visibilitychange', again);
+  }, [on]);
+  if (!bad) return null;
+  return (
+    <div className="notify-banner">
+      <span className="grow">🔕 {bad}</span>
+      <button className="act" style={{ background: 'var(--ink)', color: '#fff' }} onClick={() => void fixNotifyPermission()}>
+        켜기
+      </button>
+      <button className="act" onClick={onOpenSettings}>
+        점검
+      </button>
+    </div>
+  );
+}
+
 export function Home({ now, onOpenSettings, onOpenTodos }: Props) {
   const sleeping = useStore((s) => s.sleeping);
   const say = useStore((s) => s.say);
@@ -247,6 +278,7 @@ export function Home({ now, onOpenSettings, onOpenTodos }: Props) {
 
   return (
     <div className="screen">
+      <NotifyBanner onOpenSettings={onOpenSettings} />
       <div className="row between">
         <div className="jua" style={{ fontSize: 20 }}>
           {fmtDate(now)}
