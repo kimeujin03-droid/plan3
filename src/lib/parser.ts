@@ -267,8 +267,20 @@ const START = /(.*?)\s*(시작|할게|할래|한다|하러|해볼게|하는\s*�
  * 한 문장을 기록 명령으로 바꾼다.
  * today는 "지금이 속한 하루"의 0시: 자기 전의 새벽은 아직 전날이므로 달력 날짜와 다를 수 있다.
  */
+/**
+ * 숫자로 쓴 날짜·시각을 말로 바꿔 둔다(캘린더에서 복사한 글처럼):
+ * "11/26" → "11월 26일", "16:00-17:00" → "16시 - 17시", "9:30" → "9시 30분"
+ */
+export function normalizeNumbers(text: string): string {
+  return text
+    .replace(/(^|[^\d:./])(\d{1,2})\s*\/\s*(\d{1,2})(?![\d:/]|\s*시)/g, (all, pre, m, d) => (Number(m) >= 1 && Number(m) <= 12 && Number(d) >= 1 && Number(d) <= 31 ? `${pre}${Number(m)}월 ${Number(d)}일 ` : all))
+    .replace(/(^|[^\d])(\d{1,2}):(\d{2})(?!\d)/g, (all, pre, h, m) => (Number(h) <= 24 && Number(m) < 60 ? `${pre}${Number(h)}시${m === '00' ? '' : ` ${Number(m)}분`}` : all))
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function parse(text: string, activities: Activity[], now: number, today: number = dayStart(now)): Command[] {
-  const t = text.trim();
+  const t = normalizeNumbers(text.trim());
   if (!t) return [];
 
   if (/(말\s*걸지\s*마|조용히)/.test(t)) return [{ type: 'quiet' }];

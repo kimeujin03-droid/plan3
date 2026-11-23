@@ -99,6 +99,7 @@ export function CategoryChips({ value, onChange }: { value: string; onChange: (i
         {[...tops, ...(sleep ? [sleep] : [])].map((a) => (
           <button
             key={a.id}
+            type="button"
             className="chip"
             style={{ background: a.color }}
             aria-pressed={rootId === a.id}
@@ -120,7 +121,7 @@ export function CategoryChips({ value, onChange }: { value: string; onChange: (i
       {kids.length > 0 && (
         <div className="chips sub-chips" role="group" aria-label="하위 활동">
           {kids.map((k) => (
-            <button key={k.id} className="chip" style={{ background: k.color }} aria-pressed={value === k.id} onClick={() => onChange(k.id)}>
+            <button key={k.id} type="button" className="chip" style={{ background: k.color }} aria-pressed={value === k.id} onClick={() => onChange(k.id)}>
               {k.name}
             </button>
           ))}

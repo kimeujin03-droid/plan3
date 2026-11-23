@@ -194,3 +194,26 @@ describe('"오늘 ~하기/사기"는 오늘 할 일', () => {
     expect(parse('오늘 납땜 기기 사기', DEFAULT_ACTIVITIES, now, today)[0]).toMatchObject({ type: 'todo', text: '납땜 기기 사기', due: today });
   });
 });
+
+describe('숫자로 쓴 날짜·시각', () => {
+  const now = new Date(2026, 10, 24, 1, 12).getTime();
+  const today = new Date(2026, 10, 23).getTime();
+  const d26 = new Date(2026, 10, 26).getTime();
+  it('11/26 16:00-17:00 한성여고 교봉', () => {
+    expect(parse('11/26 16:00-17:00 한성여고 교봉', DEFAULT_ACTIVITIES, now, today)[0]).toMatchObject({
+      type: 'todo',
+      text: '한성여고 교봉',
+      due: d26,
+      start: d26 + 16 * 3600_000,
+      end: d26 + 17 * 3600_000,
+    });
+  });
+  it('11/26 9:30~11:00 회의', () => {
+    expect(parse('11/26 9:30~11:00 회의', DEFAULT_ACTIVITIES, now, today)[0]).toMatchObject({ type: 'todo', text: '회의', start: d26 + 9.5 * 3600_000, end: d26 + 11 * 3600_000 });
+  });
+  it('1.5시간 같은 소수는 날짜로 안 바꾼다', async () => {
+    const { normalizeNumbers } = await import('./parser');
+    expect(normalizeNumbers('공부 1.5시간')).toBe('공부 1.5시간');
+    expect(normalizeNumbers('3/4 마감')).toBe('3월 4일 마감');
+  });
+});

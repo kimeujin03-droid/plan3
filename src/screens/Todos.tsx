@@ -381,9 +381,10 @@ function AddTodo({ clock, fixedDue, onDone }: { today: number; clock: number; fi
         submit();
       }}
     >
-      {fixedDue === undefined && (
-        <div className="seg thin" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', background: 'var(--bg)' }}>
-          {TYPES.map((t) => (
+      {/* 달력에서 날을 골라 추가할 때도 '몇 시~몇 시'를 고를 수 있게(매일 몇 시간은 날과 상관없어서 뺀다) */}
+      {(
+        <div className="seg thin" style={{ gridTemplateColumns: `repeat(${fixedDue === undefined ? 3 : 2}, minmax(0, 1fr))`, background: 'var(--bg)' }}>
+          {TYPES.filter((t) => fixedDue === undefined || t.id !== 'hours').map((t) => (
             <button key={t.id} type="button" aria-pressed={type === t.id} onClick={() => setType(t.id)}>
               {t.name}
             </button>
@@ -395,7 +396,7 @@ function AddTodo({ clock, fixedDue, onDone }: { today: number; clock: number; fi
           className="field grow"
           aria-label="할 일"
           autoFocus
-          placeholder={fixedDue !== undefined ? `${fmtMD(fixedDue)}까지 할 일` : type === 'due' ? '할 일 적기' : `이름 (비우면 "${name}")`}
+          placeholder={type === 'due' ? (fixedDue !== undefined ? `${fmtMD(fixedDue)}까지 할 일` : '할 일 적기') : `이름 (비우면 "${name}")`}
           maxLength={80}
           value={text}
           onChange={(e) => setText(e.target.value)}
